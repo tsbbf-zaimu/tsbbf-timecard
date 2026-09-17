@@ -5,7 +5,7 @@
 //   （Googleログイン不要の方）が必須。
 // - このURLを変えないため、GAS側のコード更新は必ず
 //   「デプロイを管理 → 鉛筆 → 新バージョン」で行うこと（「新しいデプロイ」はURLが変わる）。
-var GAS_URL = 'ここにGASのWebアプリURL（https://script.google.com/macros/s/…/exec）を貼る';
+var GAS_URL = 'https://script.google.com/macros/s/AKfycbxYsBE7SdFF3e7SL-__xpSNeCYRKLY6dmSEBMCR1zhnNJq7pHvWfd1r0lDmiOl6CdEo/exec';
 
 // GASのAPI（doPost）を呼ぶ共通ヘルパー。
 // gasCall('関数名', [引数1, 引数2, …]) → Promise（成功: サーバーの戻り値 / 失敗: Error）
