@@ -1,0 +1,891 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>入退室打刻</title>
+<style>
+  :root {
+    --deep: #0F3B57;
+    --primary: #1D6E96;
+    --aqua: #5FB8D6;
+    --mist: #E4F3F8;
+    --paper: #FBFDFE;
+    --ink: #16323F;
+    --ink-soft: #5A7686;
+    --good: #2E9E6B;
+    --good-deep: #1E7A50;
+    --bad: #D64545;
+    --warn: #B07B1F;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body { height: 100%; }
+
+  body {
+    font-family: "Hiragino Sans", "Noto Sans JP", "Yu Gothic", system-ui, sans-serif;
+    background: var(--paper);
+    color: var(--ink);
+    min-height: 100vh;
+    display: flex;
+    padding: 24px 16px;
+    overflow-x: hidden;
+  }
+
+  .ripple-bg {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    overflow: hidden;
+    pointer-events: none;
+  }
+  /* スマホでも波が見えるよう、高さを画面比で確保する。
+     幅200%＝波2周期分を横にゆっくり流してアニメーションさせる
+     （波の曲線は始点と終点の傾きが同じなので、半分ずらすと継ぎ目なくループする） */
+  .ripple-bg svg {
+    position: absolute;
+    width: 200%;
+    height: 30vh;
+    min-height: 190px;
+    will-change: transform;
+  }
+  .ripple-bg .r1 { top: -4%; opacity: 0.55; animation: waveDriftA 14s linear infinite; }
+  .ripple-bg .r2 { bottom: -6%; opacity: 0.4; transform: scaleY(-1); animation: waveDriftB 20s linear infinite; }
+  @keyframes waveDriftA {
+    from { transform: translateX(0); }
+    to   { transform: translateX(-50%); }
+  }
+  /* 下の波は上下反転を保ったまま逆方向へ（速度も変えて視差を出す） */
+  @keyframes waveDriftB {
+    from { transform: scaleY(-1) translateX(-50%); }
+    to   { transform: scaleY(-1) translateX(0); }
+  }
+  /* 動きを減らす設定の端末では静止画のままにする */
+  @media (prefers-reduced-motion: reduce) {
+    .ripple-bg .r1, .ripple-bg .r2 { animation: none; }
+  }
+
+  .card {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    max-width: 400px;
+    margin: auto; /* flex中央寄せ＋はみ出し時もスクロール可能 */
+  }
+
+  .clock-row { text-align: center; margin-bottom: 22px; }
+  .date {
+    font-size: 13px;
+    letter-spacing: 0.08em;
+    color: var(--ink-soft);
+    font-weight: 600;
+  }
+  .time {
+    font-size: 44px;
+    font-weight: 700;
+    color: var(--deep);
+    letter-spacing: 0.02em;
+    font-variant-numeric: tabular-nums;
+    margin-top: 2px;
+  }
+
+  .panel {
+    background: white;
+    border-radius: 28px;
+    padding: 28px 24px 24px;
+    box-shadow: 0 18px 45px -20px rgba(15, 59, 87, 0.35), 0 2px 8px rgba(15,59,87,0.06);
+    border: 1px solid rgba(95, 184, 214, 0.18);
+  }
+
+  .greet-eyebrow {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    color: var(--aqua);
+    text-transform: uppercase;
+  }
+
+  .section-label {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--ink-soft);
+    letter-spacing: 0.06em;
+    margin-bottom: 10px;
+  }
+
+  .name-select {
+    width: 100%;
+    background: var(--mist);
+    border: 2px solid transparent;
+    border-radius: 14px;
+    padding: 14px 16px;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--deep);
+    font-family: inherit;
+    margin-bottom: 18px;
+    -webkit-appearance: none;
+    appearance: none;
+    background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="%230F3B57" stroke-width="3"><path d="M6 9l6 6 6-6"/></svg>');
+    background-repeat: no-repeat;
+    background-position: right 14px center;
+  }
+  .name-select:disabled { opacity: 0.6; }
+  .name-select:focus {
+    outline: none;
+    border-color: var(--primary);
+    background-color: white;
+  }
+
+  .state-section { display: none; }
+  .state-section.show { display: block; }
+
+  /* 入室中/未入室の状態バッジ */
+  .state-banner {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    border-radius: 999px;
+    padding: 6px 14px;
+    margin-bottom: 12px;
+  }
+  .state-banner.wait { background: var(--mist); color: var(--ink-soft); }
+  .state-banner.in { background: #E7F6EF; color: var(--good-deep); }
+  .state-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--ink-soft);
+    opacity: 0.5;
+  }
+  .state-banner.in .state-dot {
+    background: var(--good);
+    opacity: 1;
+    animation: pulse 1.8s ease-out infinite;
+  }
+  @keyframes pulse {
+    0% { box-shadow: 0 0 0 0 rgba(46,158,107,0.35); }
+    70% { box-shadow: 0 0 0 8px rgba(46,158,107,0); }
+    100% { box-shadow: 0 0 0 0 rgba(46,158,107,0); }
+  }
+
+  .code-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+    margin-bottom: 18px;
+  }
+
+  .code-btn {
+    position: relative;
+    background: var(--mist);
+    border: 2px solid transparent;
+    border-radius: 16px;
+    padding: 14px 6px 12px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    font-family: inherit;
+  }
+  .code-btn:active { transform: scale(0.97); }
+  .code-btn.selected {
+    background: white;
+    border-color: var(--primary);
+    box-shadow: 0 4px 14px -6px rgba(29,110,150,0.35);
+  }
+  .code-kana {
+    font-size: 17px;
+    font-weight: 700;
+    color: var(--deep);
+    display: block;
+  }
+  .code-kana.long { font-size: 13px; line-height: 1.35; }
+  .code-desc {
+    font-size: 10px;
+    color: var(--ink-soft);
+    display: block;
+    margin-top: 3px;
+    line-height: 1.4;
+  }
+  .code-check {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--primary);
+    display: none;
+    align-items: center;
+    justify-content: center;
+  }
+  .code-btn.selected .code-check { display: flex; }
+  .code-check svg { width: 9px; height: 9px; }
+
+  .session-card {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    background: #E7F6EF;
+    border-radius: 16px;
+    padding: 16px;
+    margin-bottom: 10px;
+  }
+  .session-kana {
+    flex-shrink: 0;
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+    background: white;
+    color: var(--good-deep);
+    font-size: 22px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 10px -4px rgba(15,59,87,0.25);
+  }
+  .session-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--deep);
+  }
+  .session-sub {
+    font-size: 12px;
+    color: var(--ink-soft);
+    margin-top: 2px;
+  }
+
+  /* 経過時間の大きめ表示 */
+  .elapsed-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    background: var(--mist);
+    border-radius: 14px;
+    padding: 12px 16px;
+    margin-bottom: 18px;
+  }
+  .elapsed-label {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--ink-soft);
+    letter-spacing: 0.06em;
+  }
+  .elapsed-value {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--deep);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .qr-status {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 12px;
+    color: var(--good);
+    font-weight: 600;
+    margin-bottom: 20px;
+    padding-left: 2px;
+  }
+  .qr-status.invalid { color: var(--bad); }
+  .qr-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--good);
+    box-shadow: 0 0 0 3px rgba(46,158,107,0.18);
+  }
+  .qr-status.invalid .qr-dot {
+    background: var(--bad);
+    box-shadow: 0 0 0 3px rgba(214,69,69,0.18);
+  }
+
+  .error-box {
+    display: none;
+    background: #FDEEEE;
+    color: var(--bad);
+    border-radius: 12px;
+    padding: 12px 14px;
+    font-size: 12px;
+    font-weight: 600;
+    margin-bottom: 16px;
+    line-height: 1.5;
+  }
+  .error-box.show { display: block; }
+
+  .submit-btn {
+    width: 100%;
+    background: linear-gradient(135deg, var(--primary), var(--deep));
+    color: white;
+    border: none;
+    border-radius: 16px;
+    padding: 17px;
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    font-family: inherit;
+    cursor: pointer;
+    transition: opacity 0.15s ease, transform 0.15s ease;
+    box-shadow: 0 10px 24px -10px rgba(15,59,87,0.5);
+  }
+  .submit-btn.out {
+    background: linear-gradient(135deg, var(--good), var(--good-deep));
+    box-shadow: 0 10px 24px -10px rgba(30,122,80,0.5);
+  }
+  .submit-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    box-shadow: none;
+  }
+  .submit-btn:active:not(:disabled) { transform: scale(0.98); }
+
+  /* success state */
+  .success-panel {
+    display: none;
+    text-align: center;
+    padding: 40px 24px 28px;
+  }
+  .success-panel.show { display: block; }
+  .panel.hide-form { display: none; }
+
+  .success-ring {
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    background: var(--mist);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 18px;
+    animation: pop 0.4s cubic-bezier(.34,1.56,.64,1);
+  }
+  @keyframes pop {
+    0% { transform: scale(0); opacity: 0; }
+    100% { transform: scale(1); opacity: 1; }
+  }
+  .success-ring svg { width: 32px; height: 32px; }
+  .success-title {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--deep);
+    margin-bottom: 4px;
+  }
+  .success-name {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--primary);
+    margin-bottom: 4px;
+  }
+  .success-greet {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--good-deep);
+    margin: 8px 0 2px;
+  }
+  .success-note {
+    display: none;
+    font-size: 12px;
+    color: var(--ink-soft);
+    background: var(--mist);
+    border-radius: 12px;
+    padding: 12px 14px;
+    margin-top: 16px;
+    line-height: 1.6;
+    text-align: left;
+    white-space: pre-line;
+  }
+  .success-note.show { display: block; }
+  .success-note.warn { color: var(--warn); background: #FBF3E2; }
+
+  /* 打刻結果（区分・滞在時間）カード */
+  .result-card {
+    display: none;
+    align-items: center;
+    gap: 14px;
+    background: var(--mist);
+    border-radius: 16px;
+    padding: 16px;
+    margin-top: 18px;
+    text-align: left;
+  }
+  .result-card.show { display: flex; }
+  .result-kana {
+    flex-shrink: 0;
+    width: 52px;
+    height: 52px;
+    border-radius: 14px;
+    background: linear-gradient(135deg, var(--primary), var(--deep));
+    color: white;
+    font-size: 24px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 6px 14px -6px rgba(15,59,87,0.4);
+  }
+  .result-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--deep);
+  }
+  .result-sub {
+    font-size: 12px;
+    color: var(--ink-soft);
+    margin-top: 2px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .ghost-btn {
+    margin-top: 20px;
+    width: 100%;
+    background: white;
+    color: var(--primary);
+    border: 2px solid var(--mist);
+    border-radius: 16px;
+    padding: 14px;
+    font-size: 14px;
+    font-weight: 700;
+    font-family: inherit;
+    cursor: pointer;
+  }
+  .ghost-btn:active { transform: scale(0.98); }
+
+  .rescan-note {
+    margin-top: 20px;
+    padding-top: 14px;
+    border-top: 1px solid var(--mist);
+    font-size: 12px;
+    color: var(--ink-soft);
+    line-height: 1.7;
+  }
+
+  .fix-link {
+    text-align: center;
+    margin-top: 16px;
+    font-size: 12px;
+  }
+  .fix-link a { color: var(--ink-soft); text-decoration: underline; }
+</style>
+</head>
+<body>
+
+<div class="ripple-bg">
+  <svg class="r1" viewBox="0 0 800 120" preserveAspectRatio="none"><path d="M0,60 C100,110 300,10 400,60 C500,110 700,10 800,60 L800,0 L0,0 Z" fill="#5FB8D6"/></svg>
+  <svg class="r2" viewBox="0 0 800 120" preserveAspectRatio="none"><path d="M0,60 C100,110 300,10 400,60 C500,110 700,10 800,60 L800,0 L0,0 Z" fill="#1D6E96"/></svg>
+</div>
+
+<div class="card">
+  <div class="clock-row">
+    <div class="date" id="dateStr"></div>
+    <div class="time" id="timeStr"></div>
+  </div>
+
+  <div class="panel" id="formPanel">
+    <div class="greet-eyebrow">TOKAI STUDENT BASKETBALL FEDERATION</div>
+    <div class="section-label" style="margin-top:10px;">あなたの名前をえらんでね</div>
+    <select class="name-select" id="nameSelect" disabled>
+      <option value="">読み込み中...</option>
+    </select>
+
+    <!-- 入室前：活動選択 -->
+    <div class="state-section" id="activitySection">
+      <div class="state-banner wait"><span class="state-dot"></span>未入室</div>
+      <div class="section-label">今日の活動をえらんでね</div>
+      <div class="code-grid" id="activityGrid"></div>
+    </div>
+
+    <!-- 入室中：セッション表示 -->
+    <div class="state-section" id="sessionSection">
+      <div class="state-banner in"><span class="state-dot"></span>入室中</div>
+      <div class="session-card">
+        <div class="session-kana" id="sessKana"></div>
+        <div>
+          <div class="session-title" id="sessTitle"></div>
+          <div class="session-sub" id="sessSub"></div>
+        </div>
+      </div>
+      <div class="elapsed-row">
+        <span class="elapsed-label">経過時間</span>
+        <span class="elapsed-value" id="sessElapsed"></span>
+      </div>
+    </div>
+
+    <div class="qr-status" id="qrStatus">
+      <span class="qr-dot"></span>
+      <span id="qrStatusText">確認中...</span>
+    </div>
+
+    <div class="error-box" id="errorBox"></div>
+
+    <button class="submit-btn" id="submitBtn" disabled onclick="submitPunch()">入室する</button>
+  </div>
+
+  <div class="panel success-panel" id="successPanel">
+    <div class="success-ring">
+      <svg viewBox="0 0 24 24" fill="none"><path d="M20 6L9 17l-5-5" stroke="#1D6E96" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </div>
+    <div class="success-title" id="successTitle"></div>
+    <div class="success-name" id="successName"></div>
+    <div class="success-greet" id="successGreet"></div>
+    <div class="result-card" id="resultCard">
+      <div class="result-kana" id="resultKana"></div>
+      <div>
+        <div class="result-title" id="resultTitle"></div>
+        <div class="result-sub" id="resultSub"></div>
+      </div>
+    </div>
+    <div class="success-note" id="successNote"></div>
+    <div class="success-note warn" id="successWarn"></div>
+    <button class="ghost-btn" id="backBtn" onclick="resetAll()">トップに戻る</button>
+    <div class="rescan-note">名前や活動が間違っていたときは、<br>この下の「修正申請」から直せるよ。</div>
+  </div>
+
+  <div class="fix-link">
+    <a href="./fix.html" target="_top">打刻内容を間違えたときは：修正申請はこちら</a>
+  </div>
+</div>
+
+<script src="./config.js"></script>
+<script>
+  // QRコードのURL（…/index.html?token=xxx）からトークンを読む。検証はサーバー側（checkQrToken_）
+  var TOKEN = new URLSearchParams(location.search).get('token') || '';
+
+  // 労いの一言（打刻のたびにランダムで1つ表示）
+  var GREETS_IN = [
+    '今日もがんばろう！💪',
+    '今日もよろしくね！😊',
+    'ようこそ！いい一日にしよう☀️',
+    '来てくれてありがとう！🙌',
+    '今日も一歩ずつ🏀',
+    '元気にいこう！✨',
+  ];
+  var GREETS_OUT = [
+    '今日もお疲れ様！🎉',
+    'ゆっくり休んでね🌙',
+    '今日もありがとう！👏',
+    'ナイスワーク！✨',
+    '気をつけて帰ってね🚃',
+    'また次もよろしく！🏀',
+  ];
+  function pickGreet(list) {
+    return list[Math.floor(Math.random() * list.length)];
+  }
+
+  var ACTIVITY_DESC = {
+    '事務所': '学連事務所での定例業務',
+    '会議': '理事会・委員会など',
+    '大会': '競技会・連盟事業',
+    '大会（審判割当有・縦2以下）': '審判割当のある学連員',
+  };
+
+  var state = {
+    qrValid: false,
+    mode: null,        // 'in' = これから入室 / 'out' = 入室中（これから退室）
+    activity: null,    // 入室時に選んだ活動
+    inEpoch: null,     // 入室中セッションの入室時刻
+    loading: false,
+  };
+
+  function $(id) { return document.getElementById(id); }
+
+  function updateClock() {
+    var now = new Date();
+    var days = ['日','月','火','水','木','金','土'];
+    $('dateStr').textContent =
+      now.getMonth() + 1 + '月' + now.getDate() + '日（' + days[now.getDay()] + '）';
+    var h = String(now.getHours()).padStart(2, '0');
+    var m = String(now.getMinutes()).padStart(2, '0');
+    $('timeStr').textContent = h + ':' + m;
+  }
+  updateClock();
+  setInterval(updateClock, 1000 * 10);
+
+  function showError(message) {
+    var box = $('errorBox');
+    box.textContent = message;
+    box.classList.add('show');
+  }
+  function clearError() {
+    $('errorBox').textContent = '';
+    $('errorBox').classList.remove('show');
+  }
+
+  function updateSubmit() {
+    var btn = $('submitBtn');
+    var hasName = !!$('nameSelect').value;
+    var ready = false;
+    if (state.mode === 'in') ready = hasName && !!state.activity;
+    if (state.mode === 'out') ready = hasName;
+    btn.disabled = !(ready && state.qrValid && !state.loading);
+  }
+
+  function hideSections() {
+    $('activitySection').classList.remove('show');
+    $('sessionSection').classList.remove('show');
+  }
+
+  function renderCheckedOut() {
+    state.mode = 'in';
+    state.activity = null;
+    state.inEpoch = null;
+    hideSections();
+    var grid = $('activityGrid');
+    Array.prototype.forEach.call(grid.children, function (el) {
+      el.classList.remove('selected');
+    });
+    $('activitySection').classList.add('show');
+    var btn = $('submitBtn');
+    btn.textContent = '入室する';
+    btn.classList.remove('out');
+    updateSubmit();
+  }
+
+  function elapsedStr(epoch) {
+    var mins = Math.max(0, Math.floor((Date.now() - epoch) / 60000));
+    var h = Math.floor(mins / 60);
+    return h > 0 ? h + '時間' + (mins % 60) + '分' : mins + '分';
+  }
+
+  function renderCheckedIn(st) {
+    state.mode = 'out';
+    state.activity = null;
+    state.inEpoch = st.inEpoch;
+    hideSections();
+    $('sessKana').textContent = st.activity.charAt(0);
+    $('sessTitle').textContent = st.activity;
+    $('sessSub').textContent = st.inDateStr + ' ' + st.inTimeStr + ' 入室';
+    $('sessElapsed').textContent = elapsedStr(st.inEpoch);
+    $('sessionSection').classList.add('show');
+    var btn = $('submitBtn');
+    btn.textContent = '退室する';
+    btn.classList.add('out');
+    updateSubmit();
+  }
+
+  // 入室中の経過時間を定期更新
+  setInterval(function () {
+    if (state.mode === 'out' && state.inEpoch) {
+      $('sessElapsed').textContent = elapsedStr(state.inEpoch);
+    }
+  }, 1000 * 30);
+
+  function buildActivityGrid(activities) {
+    var grid = $('activityGrid');
+    grid.innerHTML = '';
+    activities.forEach(function (act) {
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'code-btn';
+      btn.innerHTML =
+        '<span class="code-check"><svg viewBox="0 0 24 24" fill="none">' +
+        '<path d="M20 6L9 17l-5-5" stroke="white" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>' +
+        '</svg></span>' +
+        '<span class="code-kana"></span><span class="code-desc"></span>';
+      var kanaEl = btn.querySelector('.code-kana');
+      kanaEl.textContent = act;
+      if (act.length > 6) kanaEl.classList.add('long');
+      btn.querySelector('.code-desc').textContent = ACTIVITY_DESC[act] || '';
+      btn.addEventListener('click', function () {
+        Array.prototype.forEach.call(grid.children, function (el) {
+          el.classList.remove('selected');
+        });
+        btn.classList.add('selected');
+        state.activity = act;
+        updateSubmit();
+      });
+      grid.appendChild(btn);
+    });
+  }
+
+  function onNameChange() {
+    clearError();
+    hideSections();
+    state.mode = null;
+    state.activity = null;
+    state.inEpoch = null;
+    updateSubmit();
+
+    var name = $('nameSelect').value;
+    if (!name) return;
+
+    state.loading = true;
+    gasCall('getStatus', [name])
+      .then(function (st) {
+        state.loading = false;
+        if ($('nameSelect').value !== name) return; // 選択が変わっていたら破棄
+        if (st.checkedIn) renderCheckedIn(st);
+        else renderCheckedOut();
+      })
+      .catch(function (err) {
+        state.loading = false;
+        showError(err.message || String(err));
+        updateSubmit();
+      });
+  }
+
+  function initialize() {
+    gasCall('getInitState', [TOKEN])
+      .then(function (data) {
+        var select = $('nameSelect');
+        select.innerHTML = '';
+        var placeholder = document.createElement('option');
+        placeholder.value = '';
+        placeholder.textContent = '選択してください';
+        select.appendChild(placeholder);
+
+        // 部署ごとにグループ表示
+        var groups = {};
+        data.members.forEach(function (m) {
+          var dept = m.dept || 'その他';
+          if (!groups[dept]) {
+            groups[dept] = document.createElement('optgroup');
+            groups[dept].label = dept;
+            select.appendChild(groups[dept]);
+          }
+          var opt = document.createElement('option');
+          opt.value = m.name;
+          opt.textContent = m.name;
+          groups[dept].appendChild(opt);
+        });
+
+        select.disabled = false;
+        select.addEventListener('change', onNameChange);
+
+        buildActivityGrid(data.activities);
+
+        state.qrValid = !!(data.qr && data.qr.valid);
+        var qs = $('qrStatus');
+        if (state.qrValid) {
+          qs.classList.remove('invalid');
+          $('qrStatusText').textContent = '会場QRコード確認済み';
+        } else {
+          qs.classList.add('invalid');
+          $('qrStatusText').textContent = 'QRコードが無効です。会場のQRコードを読み込み直してください。';
+        }
+        updateSubmit();
+      })
+      .catch(function (err) {
+        showError(err.message || String(err));
+      });
+  }
+  initialize();
+
+  function showSuccess(title, name, greet, note, warn, result, showBack) {
+    $('successTitle').textContent = title;
+    $('successName').textContent = name ? name + ' さん' : '';
+    $('successGreet').textContent = greet || '';
+    // 退室後は「トップに戻る」を出さない（QR再読込を必須にして、
+    // その場にいる人しか次の打刻ができない状態を保つ）
+    $('backBtn').style.display = showBack ? '' : 'none';
+    var card = $('resultCard');
+    if (result) {
+      $('resultKana').textContent = result.kana;
+      $('resultTitle').textContent = result.title;
+      $('resultSub').textContent = result.sub;
+      card.classList.add('show');
+    } else {
+      card.classList.remove('show');
+    }
+    var noteEl = $('successNote');
+    noteEl.textContent = note || '';
+    noteEl.classList.toggle('show', !!note);
+    var warnEl = $('successWarn');
+    warnEl.textContent = warn || '';
+    warnEl.classList.toggle('show', !!warn);
+    $('formPanel').classList.add('hide-form');
+    $('successPanel').classList.add('show');
+  }
+
+  function resetAll() {
+    $('successPanel').classList.remove('show');
+    $('formPanel').classList.remove('hide-form');
+    $('nameSelect').value = '';
+    clearError();
+    hideSections();
+    state.mode = null;
+    state.activity = null;
+    state.inEpoch = null;
+    updateSubmit();
+  }
+
+  function submitPunch() {
+    clearError();
+    var name = $('nameSelect').value;
+    if (!name || !state.mode) return;
+
+    var btn = $('submitBtn');
+    btn.disabled = true;
+
+    if (state.mode === 'in') {
+      gasCall('punchIn', [{ name: name, activity: state.activity }])
+        .then(function (res) {
+          if (res.result === 'already_in') {
+            showError('すでに入室中の記録がありました。画面を入室中の表示に切り替えます。');
+            renderCheckedIn(res);
+            return;
+          }
+          var warn = null;
+          if (res.autoClosed) {
+            warn = '前回の退室忘れ（' + res.autoClosed.dateStr + '・' + res.autoClosed.activity +
+              '）を自動処理しました。財務部が内容を確認します。';
+          }
+          showSuccess(
+            '入室を記録しました',
+            name,
+            pickGreet(GREETS_IN),
+            '帰るときに、もう一度このページから「退室する」を押してね。',
+            warn,
+            { kana: res.activity.charAt(0), title: res.activity, sub: res.timeStr + ' 入室' },
+            true
+          );
+        })
+        .catch(function (err) {
+          showError(err.message || String(err));
+          updateSubmit();
+        });
+    } else {
+      gasCall('punchOut', [name])
+        .then(function (res) {
+          if (res.result === 'not_in') {
+            showError('入室中の記録が見つかりませんでした。入室からやり直してください。');
+            renderCheckedOut();
+            return;
+          }
+          var notes = [];
+          if (res.masterStatus === 'week_limited') {
+            notes.push('事務所の日当は週1回のため、今週分はすでに記録済みです（入退室時刻は保存しました）。');
+          } else if (res.masterStatus === 'duplicate') {
+            notes.push('同じ日・同じ活動の記録がすでにあるため、出席記録は既存のものを維持しました。');
+          }
+          if (res.halfPay) {
+            notes.push('審判割当のため、日当は半額支給の対象として記録しました。');
+          }
+          showSuccess(
+            '退室を記録しました',
+            name,
+            pickGreet(GREETS_OUT),
+            notes.join('\n') || null,
+            null,
+            {
+              kana: res.activity.charAt(0),
+              title: res.activity,
+              sub: res.inTimeStr + '〜' + res.outTimeStr + '・滞在 ' + res.hours + '時間',
+            },
+            false
+          );
+        })
+        .catch(function (err) {
+          showError(err.message || String(err));
+          updateSubmit();
+        });
+    }
+  }
+</script>
+
+</body>
+</html>

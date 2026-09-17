@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>打刻記録の修正申請</title>
+<style>
+  :root {
+    --deep: #0F3B57;
+    --primary: #1D6E96;
+    --aqua: #5FB8D6;
+    --mist: #E4F3F8;
+    --paper: #FBFDFE;
+    --ink: #16323F;
+    --ink-soft: #5A7686;
+    --good: #2E9E6B;
+    --bad: #D64545;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body { height: 100%; }
+
+  body {
+    font-family: "Hiragino Sans", "Noto Sans JP", "Yu Gothic", system-ui, sans-serif;
+    background: var(--paper);
+    color: var(--ink);
+    min-height: 100vh;
+    display: flex;
+    padding: 24px 16px;
+    overflow-x: hidden;
+  }
+
+  .ripple-bg {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    overflow: hidden;
+    pointer-events: none;
+  }
+  /* スマホでも波が見えるよう、高さを画面比で確保する。
+     幅200%＝波2周期分を横にゆっくり流してアニメーションさせる
+     （波の曲線は始点と終点の傾きが同じなので、半分ずらすと継ぎ目なくループする） */
+  .ripple-bg svg {
+    position: absolute;
+    width: 200%;
+    height: 30vh;
+    min-height: 190px;
+    will-change: transform;
+  }
+  .ripple-bg .r1 { top: -4%; opacity: 0.55; animation: waveDriftA 14s linear infinite; }
+  .ripple-bg .r2 { bottom: -6%; opacity: 0.4; transform: scaleY(-1); animation: waveDriftB 20s linear infinite; }
+  @keyframes waveDriftA {
+    from { transform: translateX(0); }
+    to   { transform: translateX(-50%); }
+  }
+  /* 下の波は上下反転を保ったまま逆方向へ（速度も変えて視差を出す） */
+  @keyframes waveDriftB {
+    from { transform: scaleY(-1) translateX(-50%); }
+    to   { transform: scaleY(-1) translateX(0); }
+  }
+  /* 動きを減らす設定の端末では静止画のままにする */
+  @media (prefers-reduced-motion: reduce) {
+    .ripple-bg .r1, .ripple-bg .r2 { animation: none; }
+  }
+
+  .card {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    max-width: 400px;
+    /* align-items:center を使うと縦にはみ出した時に上端が見切れて
+       スクロールできなくなるため、margin:auto で中央寄せする */
+    margin: auto;
+  }
+
+  .panel {
+    background: white;
+    border-radius: 28px;
+    padding: 28px 24px 24px;
+    box-shadow: 0 18px 45px -20px rgba(15, 59, 87, 0.35), 0 2px 8px rgba(15,59,87,0.06);
+    border: 1px solid rgba(95, 184, 214, 0.18);
+  }
+
+  .greet-eyebrow {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    color: var(--aqua);
+    text-transform: uppercase;
+  }
+  .page-title {
+    font-size: 19px;
+    font-weight: 700;
+    color: var(--deep);
+    margin: 4px 0 2px;
+  }
+  .page-sub {
+    font-size: 12px;
+    color: var(--ink-soft);
+    margin-bottom: 20px;
+    line-height: 1.6;
+  }
+
+  .section-label {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--ink-soft);
+    letter-spacing: 0.06em;
+    margin-bottom: 8px;
+  }
+
+  .field-input, textarea.field-input {
+    width: 100%;
+    min-width: 0; /* iOSのdate/time入力がはみ出すのを防ぐ */
+    background: var(--mist);
+    border: 2px solid transparent;
+    border-radius: 14px;
+    padding: 12px 14px;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--deep);
+    font-family: inherit;
+    margin-bottom: 16px;
+  }
+  input.field-input {
+    -webkit-appearance: none;
+    appearance: none;
+  }
+  select.field-input {
+    -webkit-appearance: none;
+    appearance: none;
+    background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="%230F3B57" stroke-width="3"><path d="M6 9l6 6 6-6"/></svg>');
+    background-repeat: no-repeat;
+    background-position: right 14px center;
+  }
+  .field-input:focus {
+    outline: none;
+    border-color: var(--primary);
+    background-color: white;
+  }
+  .field-input:disabled { opacity: 0.6; }
+  textarea.field-input { resize: vertical; min-height: 74px; font-weight: 500; font-size: 14px; }
+
+  .time-row { display: flex; gap: 10px; }
+  .time-row > div { flex: 1; min-width: 0; }
+
+  /* 現在の打刻内容の表示カード */
+  .current-card {
+    display: none;
+    background: var(--mist);
+    border-radius: 14px;
+    padding: 12px 14px;
+    margin: -6px 0 16px;
+  }
+  .current-card.show { display: block; }
+  .current-title {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--primary);
+    letter-spacing: 0.06em;
+    margin-bottom: 6px;
+  }
+  .current-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    padding: 3px 0;
+  }
+  .current-row .k { color: var(--ink-soft); font-weight: 600; }
+  .current-row .v { color: var(--deep); font-weight: 700; text-align: right; }
+  .current-empty { font-size: 12px; color: var(--ink-soft); }
+
+  .hint {
+    font-size: 11px;
+    color: var(--ink-soft);
+    margin: -8px 0 16px;
+    padding-left: 2px;
+    line-height: 1.5;
+  }
+
+  .error-box {
+    display: none;
+    background: #FDEEEE;
+    color: var(--bad);
+    border-radius: 12px;
+    padding: 12px 14px;
+    font-size: 12px;
+    font-weight: 600;
+    margin-bottom: 16px;
+    line-height: 1.5;
+  }
+  .error-box.show { display: block; }
+
+  .submit-btn {
+    width: 100%;
+    background: linear-gradient(135deg, var(--primary), var(--deep));
+    color: white;
+    border: none;
+    border-radius: 16px;
+    padding: 16px;
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    font-family: inherit;
+    cursor: pointer;
+    transition: opacity 0.15s ease, transform 0.15s ease;
+    box-shadow: 0 10px 24px -10px rgba(15,59,87,0.5);
+  }
+  .submit-btn:disabled { opacity: 0.4; cursor: not-allowed; box-shadow: none; }
+  .submit-btn:active:not(:disabled) { transform: scale(0.98); }
+
+  /* success */
+  .success-panel { display: none; text-align: center; padding: 40px 24px 28px; }
+  .success-panel.show { display: block; }
+  .panel.hide-form { display: none; }
+  .success-ring {
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    background: var(--mist);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 18px;
+    animation: pop 0.4s cubic-bezier(.34,1.56,.64,1);
+  }
+  @keyframes pop {
+    0% { transform: scale(0); opacity: 0; }
+    100% { transform: scale(1); opacity: 1; }
+  }
+  .success-ring svg { width: 32px; height: 32px; }
+  .success-title { font-size: 18px; font-weight: 700; color: var(--deep); margin-bottom: 6px; }
+  .success-sub { font-size: 13px; color: var(--ink-soft); line-height: 1.7; }
+  .ghost-btn {
+    margin-top: 20px;
+    width: 100%;
+    background: white;
+    color: var(--primary);
+    border: 2px solid var(--mist);
+    border-radius: 16px;
+    padding: 14px;
+    font-size: 14px;
+    font-weight: 700;
+    font-family: inherit;
+    cursor: pointer;
+  }
+  .ghost-btn:active { transform: scale(0.98); }
+</style>
+</head>
+<body>
+
+<div class="ripple-bg">
+  <svg class="r1" viewBox="0 0 800 120" preserveAspectRatio="none"><path d="M0,60 C100,110 300,10 400,60 C500,110 700,10 800,60 L800,0 L0,0 Z" fill="#5FB8D6"/></svg>
+  <svg class="r2" viewBox="0 0 800 120" preserveAspectRatio="none"><path d="M0,60 C100,110 300,10 400,60 C500,110 700,10 800,60 L800,0 L0,0 Z" fill="#1D6E96"/></svg>
+</div>
+
+<div class="card">
+  <div class="panel" id="formPanel">
+    <div class="greet-eyebrow">TOKAI STUDENT BASKETBALL FEDERATION</div>
+    <div class="page-title">打刻記録の修正申請</div>
+    <div class="page-sub">打刻の内容を間違えたときはここから申請してね。財務部が承認すると記録が自動で修正されます。</div>
+
+    <div class="section-label">あなたの名前</div>
+    <select class="field-input" id="nameSelect" disabled>
+      <option value="">読み込み中...</option>
+    </select>
+
+    <div class="section-label">修正したい日</div>
+    <input type="date" class="field-input" id="dateInput">
+
+    <div class="current-card" id="currentCard">
+      <div class="current-title">この日の現在の記録</div>
+      <div id="currentBody"></div>
+    </div>
+
+    <div class="section-label">修正内容（直したい項目だけ入力してね）</div>
+    <select class="field-input" id="actSelect">
+      <option value="">活動：変更しない</option>
+    </select>
+    <select class="field-input" id="roleSelect">
+      <option value="">役職：変更しない</option>
+    </select>
+    <div class="time-row">
+      <div>
+        <div class="section-label">入室時刻</div>
+        <input type="time" class="field-input" id="inTime">
+      </div>
+      <div>
+        <div class="section-label">退室時刻</div>
+        <input type="time" class="field-input" id="outTime">
+      </div>
+    </div>
+    <div class="hint">時刻は変更したい場合のみ入力。空欄のままなら元の時刻を維持します。</div>
+
+    <div class="section-label">修正理由（必須）</div>
+    <textarea class="field-input" id="reasonText" placeholder="例：活動を「会議」にするつもりが「事務所」で入室してしまった"></textarea>
+
+    <div class="error-box" id="errorBox"></div>
+
+    <button class="submit-btn" id="submitBtn" onclick="submitFix()">この内容で申請する</button>
+  </div>
+
+  <div class="panel success-panel" id="successPanel">
+    <div class="success-ring">
+      <svg viewBox="0 0 24 24" fill="none"><path d="M20 6L9 17l-5-5" stroke="#1D6E96" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </div>
+    <div class="success-title">申請を送信しました</div>
+    <div class="success-sub">財務部が内容を確認し、承認されると<br>打刻記録が自動で修正されます。</div>
+    <button class="ghost-btn" onclick="resetForm()">続けて別の申請をする</button>
+  </div>
+</div>
+
+<script src="./config.js"></script>
+<script>
+  function $(id) { return document.getElementById(id); }
+
+  function showError(message) {
+    var box = $('errorBox');
+    box.textContent = message;
+    box.classList.add('show');
+  }
+  function clearError() {
+    $('errorBox').textContent = '';
+    $('errorBox').classList.remove('show');
+  }
+
+  function pad(n) { return String(n).length < 2 ? '0' + n : String(n); }
+
+  function initialize() {
+    var now = new Date();
+    $('dateInput').value = now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate());
+
+    gasCall('getFixInitState', [])
+      .then(function (data) {
+        var select = $('nameSelect');
+        select.innerHTML = '';
+        var placeholder = document.createElement('option');
+        placeholder.value = '';
+        placeholder.textContent = '選択してください';
+        select.appendChild(placeholder);
+
+        var groups = {};
+        data.members.forEach(function (m) {
+          var dept = m.dept || 'その他';
+          if (!groups[dept]) {
+            groups[dept] = document.createElement('optgroup');
+            groups[dept].label = dept;
+            select.appendChild(groups[dept]);
+          }
+          var opt = document.createElement('option');
+          opt.value = m.name;
+          opt.textContent = m.name;
+          groups[dept].appendChild(opt);
+        });
+        select.disabled = false;
+        select.addEventListener('change', loadDayStatus);
+        $('dateInput').addEventListener('change', loadDayStatus);
+
+        data.activities.forEach(function (act) {
+          var opt = document.createElement('option');
+          opt.value = act;
+          opt.textContent = '活動を「' + act + '」に変更';
+          $('actSelect').appendChild(opt);
+        });
+        data.roles.forEach(function (role) {
+          var opt = document.createElement('option');
+          opt.value = role;
+          opt.textContent = '役職を「' + role + '」に変更';
+          $('roleSelect').appendChild(opt);
+        });
+      })
+      .catch(function (err) {
+        showError(err.message || String(err));
+      });
+  }
+  initialize();
+
+  // 名前×日付が揃ったら、その日の現在の打刻内容を表示する
+  var statusSeq = 0;
+  function loadDayStatus() {
+    var name = $('nameSelect').value;
+    var date = $('dateInput').value;
+    var card = $('currentCard');
+    var body = $('currentBody');
+    if (!name || !date) {
+      card.classList.remove('show');
+      return;
+    }
+
+    var seq = ++statusSeq;
+    card.classList.add('show');
+    body.innerHTML = '<div class="current-empty">読み込み中...</div>';
+
+    gasCall('getFixDayStatus', [name, date])
+      .then(function (st) {
+        if (seq !== statusSeq) return; // 古いリクエストの結果は破棄
+        body.innerHTML = '';
+        if (!st.found) {
+          var p = document.createElement('div');
+          p.className = 'current-empty';
+          p.textContent = 'この日の打刻記録は見つかりませんでした。日付や名前を確認してね。';
+          body.appendChild(p);
+          return;
+        }
+        [['活動', st.activity || '—'],
+         ['役職', st.role || '—'],
+         ['入室', st.inStr],
+         ['退室', st.outStr]].forEach(function (pair) {
+          var row = document.createElement('div');
+          row.className = 'current-row';
+          var k = document.createElement('span');
+          k.className = 'k';
+          k.textContent = pair[0];
+          var v = document.createElement('span');
+          v.className = 'v';
+          v.textContent = pair[1];
+          row.appendChild(k);
+          row.appendChild(v);
+          body.appendChild(row);
+        });
+      })
+      .catch(function (err) {
+        if (seq !== statusSeq) return;
+        body.innerHTML = '';
+        var p = document.createElement('div');
+        p.className = 'current-empty';
+        p.textContent = '記録の取得に失敗しました：' + (err.message || err);
+        body.appendChild(p);
+      });
+  }
+
+  function submitFix() {
+    clearError();
+    var payload = {
+      name: $('nameSelect').value,
+      targetDate: $('dateInput').value,
+      newActivity: $('actSelect').value,
+      newRole: $('roleSelect').value,
+      newIn: $('inTime').value,
+      newOut: $('outTime').value,
+      reason: $('reasonText').value.trim(),
+    };
+
+    if (!payload.name) { showError('名前を選択してください。'); return; }
+    if (!payload.targetDate) { showError('修正したい日を選択してください。'); return; }
+    if (!payload.newActivity && !payload.newRole && !payload.newIn && !payload.newOut) {
+      showError('修正する項目を1つ以上入力してください。');
+      return;
+    }
+    if (!payload.reason) { showError('修正理由を入力してください。'); return; }
+
+    var btn = $('submitBtn');
+    btn.disabled = true;
+    gasCall('submitFixRequest', [payload])
+      .then(function () {
+        btn.disabled = false;
+        $('formPanel').classList.add('hide-form');
+        $('successPanel').classList.add('show');
+      })
+      .catch(function (err) {
+        btn.disabled = false;
+        showError(err.message || String(err));
+      });
+  }
+
+  function resetForm() {
+    $('successPanel').classList.remove('show');
+    $('formPanel').classList.remove('hide-form');
+    $('actSelect').value = '';
+    $('roleSelect').value = '';
+    $('inTime').value = '';
+    $('outTime').value = '';
+    $('reasonText').value = '';
+    clearError();
+  }
+</script>
+
+</body>
+</html>

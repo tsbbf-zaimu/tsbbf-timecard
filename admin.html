@@ -1,0 +1,858 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>打刻管理（財務部）</title>
+<style>
+  :root {
+    --deep: #0F3B57;
+    --primary: #1D6E96;
+    --aqua: #5FB8D6;
+    --mist: #E4F3F8;
+    --paper: #FBFDFE;
+    --ink: #16323F;
+    --ink-soft: #5A7686;
+    --good: #2E9E6B;
+    --warn: #B07B1F;
+    --warn-soft: #E9B44C;
+    --bad: #D64545;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: "Hiragino Sans", "Noto Sans JP", "Yu Gothic", system-ui, sans-serif;
+    background: var(--paper);
+    color: var(--ink);
+    padding: 28px 16px 70px;
+    overflow-x: hidden;
+  }
+
+  .ripple-bg {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    overflow: hidden;
+    pointer-events: none;
+  }
+  /* スマホでも波が見えるよう、高さを画面比で確保する。
+     幅200%＝波2周期分を横にゆっくり流してアニメーションさせる
+     （波の曲線は始点と終点の傾きが同じなので、半分ずらすと継ぎ目なくループする） */
+  .ripple-bg svg {
+    position: absolute;
+    width: 200%;
+    height: 26vh;
+    min-height: 170px;
+    will-change: transform;
+  }
+  .ripple-bg .r1 { top: -4%; opacity: 0.45; animation: waveDriftA 14s linear infinite; }
+  .ripple-bg .r2 { bottom: -6%; opacity: 0.3; transform: scaleY(-1); animation: waveDriftB 20s linear infinite; }
+  @keyframes waveDriftA {
+    from { transform: translateX(0); }
+    to   { transform: translateX(-50%); }
+  }
+  /* 下の波は上下反転を保ったまま逆方向へ（速度も変えて視差を出す） */
+  @keyframes waveDriftB {
+    from { transform: scaleY(-1) translateX(-50%); }
+    to   { transform: scaleY(-1) translateX(0); }
+  }
+  /* 動きを減らす設定の端末では静止画のままにする */
+  @media (prefers-reduced-motion: reduce) {
+    .ripple-bg .r1, .ripple-bg .r2 { animation: none; }
+  }
+
+  .wrap { position: relative; z-index: 1; max-width: 880px; margin: 0 auto; }
+
+  .greet-eyebrow {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    color: var(--aqua);
+    text-transform: uppercase;
+  }
+  h1 { font-size: 22px; color: var(--deep); margin-top: 4px; }
+  .sub { font-size: 12px; color: var(--ink-soft); margin-top: 4px; line-height: 1.6; }
+
+  /* ---- ログイン ---- */
+  #keyBox {
+    max-width: 380px;
+    margin: 9vh auto 0;
+    background: white;
+    border-radius: 28px;
+    padding: 32px 28px 28px;
+    text-align: center;
+    box-shadow: 0 18px 45px -20px rgba(15, 59, 87, 0.35), 0 2px 8px rgba(15,59,87,0.06);
+    border: 1px solid rgba(95, 184, 214, 0.18);
+  }
+  #keyInput {
+    width: 100%;
+    background: var(--mist);
+    border: 2px solid transparent;
+    border-radius: 14px;
+    padding: 14px 16px;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--deep);
+    font-family: inherit;
+    margin: 20px 0 14px;
+    text-align: center;
+  }
+  #keyInput:focus { outline: none; border-color: var(--primary); background: white; }
+  .submit-btn {
+    width: 100%;
+    background: linear-gradient(135deg, var(--primary), var(--deep));
+    color: white;
+    border: none;
+    border-radius: 14px;
+    padding: 14px;
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    font-family: inherit;
+    cursor: pointer;
+    box-shadow: 0 10px 24px -10px rgba(15,59,87,0.5);
+  }
+  .submit-btn:active { transform: scale(0.98); }
+
+  /* ---- ヘッダー ---- */
+  .page-head {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  button {
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 700;
+    border: none;
+    border-radius: 10px;
+    padding: 9px 16px;
+    cursor: pointer;
+    background: linear-gradient(135deg, var(--primary), var(--deep));
+    color: white;
+    box-shadow: 0 8px 18px -10px rgba(15,59,87,0.5);
+    flex-shrink: 0;
+  }
+  button.small {
+    padding: 6px 11px;
+    font-size: 11px;
+    border-radius: 8px;
+    background: var(--primary);
+    box-shadow: none;
+    white-space: nowrap;
+  }
+  button.ghost {
+    background: white;
+    color: var(--primary);
+    border: 2px solid var(--mist);
+    box-shadow: none;
+  }
+  button:disabled { opacity: 0.45; cursor: not-allowed; box-shadow: none; }
+  button:active:not(:disabled) { transform: scale(0.97); }
+
+  .msg { font-size: 12px; color: var(--ink-soft); margin-top: 10px; min-height: 18px; }
+  .msg.error { color: var(--bad); font-weight: 700; }
+
+  /* 月選択・操作列 */
+  .controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 14px;
+  }
+  #monthSelect {
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--deep);
+    background: white;
+    border: 2px solid var(--mist);
+    border-radius: 10px;
+    padding: 8px 10px;
+  }
+  #monthSelect:focus { outline: none; border-color: var(--primary); }
+
+  /* 月をまたいだ対応漏れ防止用：全期間の要対応件数バッジ */
+  .total-badge {
+    display: inline-flex;
+    align-items: center;
+    font-size: 11px;
+    font-weight: 700;
+    border-radius: 999px;
+    padding: 6px 12px;
+    background: #EDF2F5;
+    color: var(--ink-soft);
+  }
+  .total-badge.hot { background: #FBF3E2; color: var(--warn); }
+
+  /* ---- サマリーカード ---- */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+    margin: 16px 0 20px;
+  }
+  .stat {
+    background: white;
+    border: 1px solid rgba(95, 184, 214, 0.18);
+    border-top: 3px solid var(--mist);
+    border-radius: 16px;
+    padding: 12px 14px;
+    box-shadow: 0 10px 24px -18px rgba(15,59,87,0.35);
+  }
+  .stat-value {
+    font-size: 26px;
+    font-weight: 700;
+    color: var(--ink-soft);
+    opacity: 0.55;
+    font-variant-numeric: tabular-nums;
+  }
+  .stat-value.hot { opacity: 1; }
+  .stat.open { border-top-color: var(--primary); }
+  .stat.open .stat-value.hot { color: var(--primary); }
+  .stat.review { border-top-color: var(--warn-soft); }
+  .stat.review .stat-value.hot { color: var(--warn); }
+  .stat.corr { border-top-color: var(--aqua); }
+  .stat.corr .stat-value.hot { color: var(--deep); }
+  .stat.skip { border-top-color: #C4D3DB; }
+  .stat.skip .stat-value.hot { color: var(--ink-soft); }
+  .stat-label { font-size: 11px; font-weight: 700; color: var(--ink-soft); margin-top: 2px; }
+  .stat-scope { font-size: 10px; color: #8AA3B0; margin-top: 2px; }
+
+  /* ---- セクションカード ---- */
+  section {
+    background: white;
+    border: 1px solid rgba(95, 184, 214, 0.18);
+    border-radius: 20px;
+    padding: 18px 16px 14px;
+    margin-bottom: 16px;
+    box-shadow: 0 14px 34px -26px rgba(15,59,87,0.4);
+  }
+  h2 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 15px;
+    color: var(--deep);
+    padding-bottom: 9px;
+    margin-bottom: 10px;
+    border-bottom: 2px solid var(--mist);
+  }
+  .sec-dot { width: 10px; height: 10px; border-radius: 4px; flex-shrink: 0; }
+  section.sec-open .sec-dot { background: var(--primary); }
+  section.sec-review .sec-dot { background: var(--warn-soft); }
+  section.sec-corr .sec-dot { background: var(--aqua); }
+  section.sec-skip .sec-dot { background: #C4D3DB; }
+  section.sec-del .sec-dot { background: var(--bad); }
+
+  /* ---- 記録の削除 ---- */
+  button.small.danger { background: var(--bad); }
+  .del-form {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 4px;
+  }
+  .del-form input {
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--deep);
+    background: white;
+    border: 2px solid var(--mist);
+    border-radius: 10px;
+    padding: 8px 10px;
+  }
+  .del-form input:focus { outline: none; border-color: var(--primary); }
+
+  h3 { font-size: 13px; color: var(--ink-soft); margin: 18px 0 8px; }
+
+  /* ---- テーブル ---- */
+  .scroll-x { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 560px; }
+  th, td { text-align: left; padding: 8px; border-bottom: 1px solid #EDF5F8; vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  th {
+    background: #F0F8FB;
+    color: var(--ink-soft);
+    font-size: 11px;
+    white-space: nowrap;
+  }
+  th:first-child { border-radius: 8px 0 0 8px; }
+  th:last-child { border-radius: 0 8px 8px 0; }
+
+  .empty { color: #8AA3B0; font-size: 12px; padding: 8px 2px; }
+  .tag {
+    display: inline-block;
+    padding: 2px 9px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+  .tag.warn { background: #FBF3E2; color: var(--warn); }
+  .tag.bad { background: #FDEEEE; color: var(--bad); }
+  .tag.ok { background: #E7F6EF; color: var(--good); }
+  .tag.mute { background: #EDF2F5; color: var(--ink-soft); }
+
+  .bar { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  .counts { font-size: 12px; color: var(--ink-soft); margin-bottom: 10px; }
+  .counts b { color: var(--deep); font-size: 14px; }
+  .note-cell { max-width: 220px; word-break: break-all; }
+
+  @media (max-width: 620px) {
+    body { padding: 20px 12px 60px; }
+    .stats { grid-template-columns: repeat(2, 1fr); }
+    .page-head { flex-direction: column; align-items: flex-start; }
+    h1 { font-size: 20px; }
+    section { padding: 15px 12px 12px; border-radius: 16px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="ripple-bg">
+  <svg class="r1" viewBox="0 0 800 120" preserveAspectRatio="none"><path d="M0,60 C100,110 300,10 400,60 C500,110 700,10 800,60 L800,0 L0,0 Z" fill="#5FB8D6"/></svg>
+  <svg class="r2" viewBox="0 0 800 120" preserveAspectRatio="none"><path d="M0,60 C100,110 300,10 400,60 C500,110 700,10 800,60 L800,0 L0,0 Z" fill="#1D6E96"/></svg>
+</div>
+
+<div class="wrap">
+
+  <div id="keyBox">
+    <div class="greet-eyebrow">TOKAI STUDENT BASKETBALL FEDERATION</div>
+    <h1>打刻管理</h1>
+    <div class="sub">財務部専用ページです。合言葉を入力してください。</div>
+    <input type="password" id="keyInput" placeholder="合言葉">
+    <button class="submit-btn" onclick="saveKey()">表示する</button>
+    <div class="msg error" id="keyMsg"></div>
+  </div>
+
+  <div id="content" style="display:none">
+    <div class="page-head">
+      <div>
+        <div class="greet-eyebrow">TOKAI STUDENT BASKETBALL FEDERATION</div>
+        <h1>打刻管理（財務部）</h1>
+        <div class="sub">未退室者・要確認記録・修正申請・スキップ記録の確認と、誤打刻の削除ができます</div>
+      </div>
+    </div>
+    <div class="controls">
+      <select id="monthSelect" onchange="loadAll()"></select>
+      <span class="total-badge" id="totalBadge"></span>
+      <button onclick="loadAll()">更新</button>
+      <button class="ghost" onclick="syncNewMembers()">新メンバーを反映</button>
+      <button class="ghost" onclick="archiveOld()">過去月分をアーカイブ</button>
+    </div>
+    <div class="msg" id="loadMsg"></div>
+
+    <div class="stats">
+      <div class="stat open">
+        <div class="stat-value" id="statOpen">–</div>
+        <div class="stat-label">未退室者</div>
+        <div class="stat-scope" id="statOpenScope">選択月</div>
+      </div>
+      <div class="stat review">
+        <div class="stat-value" id="statReview">–</div>
+        <div class="stat-label">要確認の記録</div>
+        <div class="stat-scope" id="statReviewScope">選択月</div>
+      </div>
+      <div class="stat corr">
+        <div class="stat-value" id="statCorr">–</div>
+        <div class="stat-label">未処理の修正申請</div>
+        <div class="stat-scope" id="statCorrScope">選択月</div>
+      </div>
+      <div class="stat skip">
+        <div class="stat-value" id="statSkip">–</div>
+        <div class="stat-label">スキップ記録</div>
+        <div class="stat-scope" id="statSkipScope">選択月</div>
+      </div>
+    </div>
+
+    <section class="sec-open">
+      <h2><span class="sec-dot"></span>① 未退室者</h2>
+      <div id="openArea" class="scroll-x"></div>
+    </section>
+
+    <section class="sec-review">
+      <h2><span class="sec-dot"></span>② 補完された記録（要確認）</h2>
+      <div class="sub" style="margin:0 0 10px;">退室忘れを自動・手動で補完した記録です。実際の活動時間が不明なため、区分は日当B（低い方）で仮記録されています。内容を確認し、必要なら「日当Aに変更」で区分を直したうえで「確認済みにする」を押してください（変更は打刻記録の区分にもすぐ反映されます）。</div>
+      <div id="reviewArea" class="scroll-x"></div>
+    </section>
+
+    <section class="sec-corr">
+      <h2><span class="sec-dot"></span>③ 修正申請</h2>
+      <div class="sub" style="margin:0 0 10px;">部員が修正申請ページから送信した申請です。「承認」を押すと滞在記録・打刻記録が自動で修正され、区分（あいうえ）も再計算されます。未処理はすべての月から表示し、承認・却下済みと修正履歴は上で選択した月の分のみ表示します。</div>
+      <div class="counts" id="corrCounts"></div>
+      <div id="corrArea" class="scroll-x"></div>
+      <h3>修正履歴（選択月・直近50件）</h3>
+      <div id="corrLogArea" class="scroll-x"></div>
+    </section>
+
+    <section class="sec-skip">
+      <h2><span class="sec-dot"></span>④ 日当対象外スキップ記録</h2>
+      <div class="sub" style="margin:0 0 10px;">週内事務所制限・同日重複により打刻記録に追加しなかった退室打刻の一覧です（入退室時刻は滞在記録に保存されています）。上で選択した月の分を表示します。</div>
+      <div id="skipArea" class="scroll-x"></div>
+    </section>
+
+    <section class="sec-del">
+      <h2><span class="sec-dot"></span>⑤ 記録の削除（誤打刻の取り消し）</h2>
+      <div class="sub" style="margin:0 0 10px;">テスト打刻や誤った名前での打刻を、検索して完全に削除できます。削除した内容は③の「修正履歴」に記録されます（いつ・何を削除したか）。打刻記録を削除すると、月次シート（交通費スプシ）の該当セルも自動で消去・更新されます。<br>※滞在記録の入室・退室はセットです。片方だけ削除すると未退室扱いになったり退室忘れ補完が誤作動したりするため、原則ペアで両方削除してください。</div>
+      <div class="del-form">
+        <input id="delName" placeholder="名前（一部でも可）">
+        <input id="delDate" type="date">
+        <button class="small" onclick="searchRecords()">検索</button>
+      </div>
+      <h3>打刻記録（日当の元データ）</h3>
+      <div id="delMasterArea" class="scroll-x"><div class="empty">名前か対象日で検索してください</div></div>
+      <h3>滞在記録（入退室の生ログ）</h3>
+      <div id="delStayArea" class="scroll-x"><div class="empty">名前か対象日で検索してください</div></div>
+    </section>
+  </div>
+</div>
+
+<script src="./config.js"></script>
+<script>
+  var KEY = sessionStorage.getItem('adminKey') || '';
+
+  function $(id) { return document.getElementById(id); }
+
+  function saveKey() {
+    var v = $('keyInput').value;
+    if (!v) return;
+    KEY = v;
+    sessionStorage.setItem('adminKey', v);
+    $('keyMsg').textContent = '';
+    loadAll();
+  }
+
+  $('keyInput').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') saveKey();
+  });
+
+  function showLogin(message) {
+    KEY = '';
+    sessionStorage.removeItem('adminKey');
+    $('content').style.display = 'none';
+    $('keyBox').style.display = 'block';
+    $('keyMsg').textContent = message || '';
+  }
+
+  function setMsg(text, isError) {
+    var el = $('loadMsg');
+    el.textContent = text;
+    el.className = isError ? 'msg error' : 'msg';
+  }
+
+  function setStat(id, n) {
+    var el = $(id);
+    el.textContent = n;
+    el.classList.toggle('hot', n > 0);
+  }
+
+  // rows: 配列の配列（セルは文字列 or DOM要素）
+  function renderTable(containerId, headers, rows, emptyMsg) {
+    var area = $(containerId);
+    area.innerHTML = '';
+    if (!rows || rows.length === 0) {
+      var p = document.createElement('div');
+      p.className = 'empty';
+      p.textContent = emptyMsg;
+      area.appendChild(p);
+      return;
+    }
+    var table = document.createElement('table');
+    var thead = document.createElement('thead');
+    var trh = document.createElement('tr');
+    headers.forEach(function (h) {
+      var th = document.createElement('th');
+      th.textContent = h;
+      trh.appendChild(th);
+    });
+    thead.appendChild(trh);
+    table.appendChild(thead);
+    var tbody = document.createElement('tbody');
+    rows.forEach(function (cells) {
+      var tr = document.createElement('tr');
+      cells.forEach(function (c) {
+        var td = document.createElement('td');
+        if (c instanceof Node) td.appendChild(c);
+        else td.textContent = c == null ? '' : String(c);
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    area.appendChild(table);
+  }
+
+  function tag(text, cls) {
+    var s = document.createElement('span');
+    s.className = 'tag ' + cls;
+    s.textContent = text;
+    return s;
+  }
+
+  // 区分（あいうえ）の意味（judgeMark_ と同じ対応表）
+  // あ＝部員・日当B／い＝部員・日当A／う＝部署長・日当B／え＝部署長・日当A
+  var MARK_INFO = {
+    'あ': '日当B（低い方）',
+    'い': '日当A（高い方）',
+    'う': '日当B（低い方）',
+    'え': '日当A（高い方）',
+  };
+  function markLabel(mark) {
+    var info = MARK_INFO[mark];
+    return info ? '「' + mark + '」' + info : '「' + mark + '」';
+  }
+
+  function actionBtn(label, onClick, extraClass) {
+    var b = document.createElement('button');
+    b.className = 'small' + (extraClass ? ' ' + extraClass : '');
+    b.textContent = label;
+    b.addEventListener('click', function () {
+      b.disabled = true;
+      onClick(function () { b.disabled = false; });
+    });
+    return b;
+  }
+
+  function fail(err) {
+    var m = (err && err.message) || String(err);
+    if (m.indexOf('合言葉') !== -1 || m.indexOf('管理キー') !== -1) {
+      showLogin(m);
+    } else {
+      setMsg(m, true);
+    }
+  }
+
+  // silent=true で呼ぶと読み込みメッセージを出さない（削除結果などの表示を消さないため）
+  function loadAll(silent) {
+    if (!KEY) { showLogin(''); return; }
+    if (!silent) setMsg('読み込み中...');
+    gasCall('getAdminData', [KEY, $('monthSelect').value || ''])
+      .then(function (data) {
+        $('keyBox').style.display = 'none';
+        $('content').style.display = 'block';
+        fillMonths(data.months, data.month);
+        render(data);
+        if (!silent) setMsg('最終更新：' + new Date().toLocaleTimeString() + '（表示月：' + data.month + '）');
+      })
+      .catch(fail);
+  }
+
+  function fillMonths(months, selected) {
+    var sel = $('monthSelect');
+    // 月が替わってリストの中身が変わった場合も作り直す（件数比較だと検知できない）
+    if (!sel.options.length || sel.options[0].value !== months[0]) {
+      sel.innerHTML = '';
+      months.forEach(function (m) {
+        var opt = document.createElement('option');
+        opt.value = m;
+        opt.textContent = m;
+        sel.appendChild(opt);
+      });
+    }
+    sel.value = selected;
+  }
+
+  function syncNewMembers() {
+    if (!confirm('テンプレシートの内容で以下を実行しますか？\n・役職マスタの同期（打刻画面の名前ドロップダウンに反映）\n・今月の月次シートに、まだ載っていないメンバーの行を追加')) return;
+    setMsg('新メンバーを反映中...');
+    gasCall('adminSyncNewMembers', [KEY])
+      .then(function (res) {
+        if (res.added.length > 0) {
+          setMsg('役職マスタを同期し、月次シート（' + res.month + '）に ' + res.added.length + ' 名を追加しました：' + res.added.join('、'));
+        } else {
+          setMsg('役職マスタを同期しました。月次シート（' + res.month + '）への追加が必要なメンバーはいませんでした');
+        }
+        loadAll();
+      })
+      .catch(fail);
+  }
+
+  function archiveOld() {
+    if (!confirm('先月以前の「処理済み修正申請」と「スキップ記録」をアーカイブシートへ移動しますか？\n（未処理の申請・要確認記録は移動されません）')) return;
+    setMsg('アーカイブ中...');
+    gasCall('adminArchiveOldMonths', [KEY])
+      .then(function (res) {
+        setMsg('アーカイブ完了：修正申請 ' + res.fix + ' 件／スキップ記録 ' + res.skip + ' 件を移動しました');
+        loadAll();
+      })
+      .catch(fail);
+  }
+
+  function render(data) {
+    // サマリーカード
+    // サマリーカードは「選択月の件数」。一覧（要対応系）は見落とし防止のため全件表示のまま
+    var mPrefix = data.month + '/';
+    var openMonth = data.openSessions.filter(function (s) {
+      return s.inStr.indexOf(mPrefix) === 0;
+    }).length;
+    var reviewMonth = data.pendingReview.filter(function (r) {
+      return r.dateStr.indexOf(mPrefix) === 0;
+    }).length;
+    var corrMonth = data.corrections.rows.filter(function (r) {
+      return r.status === '未処理' && r.ts.indexOf(mPrefix) === 0;
+    }).length;
+
+    setStat('statOpen', openMonth);
+    setStat('statReview', reviewMonth);
+    setStat('statCorr', corrMonth);
+    setStat('statSkip', data.skips.length);
+    ['statOpenScope', 'statReviewScope', 'statCorrScope', 'statSkipScope'].forEach(function (id) {
+      $(id).textContent = data.month + ' の件数';
+    });
+
+    // 月をまたいだ対応漏れ防止：全期間の要対応件数バッジ
+    var totalOpen = data.openSessions.length;
+    var totalReview = data.pendingReview.length;
+    var totalPending = data.corrections.counts.pending;
+    $('totalBadge').textContent =
+      '全期間の要対応：未退室 ' + totalOpen + '・要確認 ' + totalReview + '・修正申請 ' + totalPending;
+    $('totalBadge').className =
+      'total-badge' + ((totalOpen + totalReview + totalPending) > 0 ? ' hot' : '');
+
+    // ① 未退室者
+    renderTable('openArea',
+      ['名前', '活動', '入室', '経過', '状態', '操作'],
+      data.openSessions.map(function (s) {
+        return [
+          s.name,
+          s.activity,
+          s.inStr,
+          s.elapsedHours + '時間',
+          s.stale ? tag('24時間超・補完待ち', 'bad') : tag('入室中', 'ok'),
+          actionBtn('強制退室', function (done) { forceCheckout(s.name, done); }),
+        ];
+      }),
+      '未退室者はいません');
+
+    // ② 要確認
+    renderTable('reviewArea',
+      ['日付', '名前', '役職', '活動', '区分', 'メモ', '操作'],
+      data.pendingReview.map(function (r) {
+        var noteDiv = document.createElement('div');
+        noteDiv.className = 'note-cell';
+        noteDiv.textContent = r.note;
+        var isHigh = r.mark === 'い' || r.mark === 'え';
+        var ops = document.createElement('div');
+        ops.appendChild(actionBtn(
+          isHigh ? '日当B（低い方）に変更' : '日当A（高い方）に変更',
+          function (done) { setMark(r, !isHigh, done); },
+          'ghost'));
+        ops.appendChild(document.createTextNode(' '));
+        ops.appendChild(actionBtn('確認済みにする', function (done) { markReviewed(r, done); }));
+        return [
+          r.dateStr, r.name, r.role, r.activity,
+          tag(markLabel(r.mark) + '・仮', 'warn'),
+          noteDiv,
+          ops,
+        ];
+      }),
+      '要確認の記録はありません');
+
+    // ③ 修正申請
+    var c = data.corrections;
+    $('corrCounts').innerHTML = '';
+    $('corrCounts').appendChild(document.createTextNode('未処理 '));
+    var b1 = document.createElement('b');
+    b1.textContent = c.counts.pending;
+    $('corrCounts').appendChild(b1);
+    $('corrCounts').appendChild(document.createTextNode(
+      ' 件 ／ 承認 ' + c.counts.approved + ' 件 ／ 却下 ' + c.counts.rejected + ' 件（処理済みは選択月・直近50件まで表示）'));
+
+    renderTable('corrArea',
+      ['申請日時', '名前', '対象日', '修正内容', '理由', '状態／操作'],
+      c.rows.map(function (r) {
+        var last;
+        if (r.status === '未処理') {
+          last = document.createElement('div');
+          var wrap = last;
+          last.appendChild(actionBtn('承認', function (done) { approveFix(r, done, wrap); }));
+          last.appendChild(document.createTextNode(' '));
+          last.appendChild(actionBtn('却下', function (done) { rejectFix(r, done, wrap); }, 'ghost'));
+        } else if (r.status === '承認') {
+          last = tag('承認', 'ok');
+        } else if (r.status === '却下') {
+          last = tag('却下', 'bad');
+        } else {
+          last = tag(r.status, 'mute');
+        }
+        return [r.ts, r.name, r.targetDate, r.changes, r.reason, last];
+      }),
+      '修正申請はありません');
+
+    renderTable('corrLogArea',
+      ['処理時刻', '名前', '対象日', '修正項目', '新しい値', '理由', '結果'],
+      data.correctionLog.map(function (r) {
+        var t;
+        if (r.result === 'DONE' || r.result === '承認') t = tag(r.result, 'ok');
+        else if (r.result === '却下' || r.result === 'REJECTED') t = tag(r.result, 'bad');
+        else t = tag(r.result, 'mute');
+        return [r.ts, r.name, r.targetDate, r.field, r.value, r.reason, t];
+      }),
+      '修正履歴はありません');
+
+    // ④ スキップ記録
+    renderTable('skipArea',
+      ['記録日時', '対象日', '名前', '役職', '活動', '理由'],
+      data.skips.map(function (r) {
+        return [r.ts, r.targetDate, r.name, r.role, r.activity,
+          r.reason === '週内事務所制限' ? tag(r.reason, 'warn') : tag(r.reason, 'mute')];
+      }),
+      'スキップ記録はありません');
+  }
+
+  function forceCheckout(name, done) {
+    if (!confirm(name + ' さんを強制退室させますか？\n区分は低い方（う/あ）で仮記録され、要確認一覧に載ります。')) {
+      done();
+      return;
+    }
+    gasCall('adminForceCheckout', [KEY, name])
+      .then(function (res) {
+        done();
+        if (res.result === 'not_in') setMsg('対象の未退室記録が見つかりませんでした。', true);
+        loadAll();
+      })
+      .catch(function (err) { done(); fail(err); });
+  }
+
+  function markReviewed(r, done) {
+    gasCall('adminMarkReviewed', [KEY, r.row, r.name, r.dateStr])
+      .then(function () { done(); loadAll(); })
+      .catch(function (err) { done(); fail(err); });
+  }
+
+  function setMark(r, high, done) {
+    var target = high ? '日当A（高い方）' : '日当B（低い方）';
+    if (!confirm(r.name + ' さんの ' + r.dateStr + ' の区分を' + target + 'に変更しますか？\n打刻記録の区分（あいうえ）にも反映されます。')) {
+      done();
+      return;
+    }
+    gasCall('adminSetMark', [KEY, r.row, r.name, r.dateStr, high])
+      .then(function (res) {
+        done();
+        setMsg('区分を「' + res.mark + '」（' + target + '）に変更しました');
+        loadAll();
+      })
+      .catch(function (err) { done(); fail(err); });
+  }
+
+  // 承認・却下：サーバー処理成功と同時にその行の表示をタグへ差し替え（即時反映）、
+  // その後 loadAll() で全体を最新化する
+  function markCellDone(wrap, label, cls) {
+    if (!wrap) return;
+    wrap.textContent = '';
+    wrap.appendChild(tag(label, cls));
+  }
+
+  function approveFix(r, done, wrap) {
+    if (!confirm(r.name + ' さんの ' + r.targetDate + ' の申請（' + r.changes + '）を承認して、\n滞在記録・打刻記録に反映しますか？')) {
+      done();
+      return;
+    }
+    setMsg('申請を反映中...');
+    gasCall('adminApproveFix', [KEY, r.row, r.name, r.targetDate])
+      .then(function () {
+        done();
+        markCellDone(wrap, '承認', 'ok');
+        setMsg('承認して記録に反映しました');
+        loadAll();
+      })
+      .catch(function (err) { done(); fail(err); });
+  }
+
+  function rejectFix(r, done, wrap) {
+    if (!confirm(r.name + ' さんの ' + r.targetDate + ' の申請を却下しますか？（記録は変更されません）')) {
+      done();
+      return;
+    }
+    gasCall('adminRejectFix', [KEY, r.row, r.name, r.targetDate])
+      .then(function () {
+        done();
+        markCellDone(wrap, '却下', 'bad');
+        setMsg('申請を却下しました');
+        loadAll();
+      })
+      .catch(function (err) { done(); fail(err); });
+  }
+
+  // ---- ⑤ 記録の削除 ----
+  function searchRecords(prefixMsg) {
+    var name = $('delName').value.trim();
+    var d = $('delDate').value; // yyyy-mm-dd
+    var dateStr = d ? d.replace(/-/g, '/') : '';
+    if (!name && !dateStr) {
+      setMsg('名前か対象日のどちらかを入力してください', true);
+      return;
+    }
+    var prefix = prefixMsg || '';
+    setMsg(prefix + '検索中...');
+    gasCall('adminSearchRecords', [KEY, name, dateStr])
+      .then(function (res) {
+        renderDelResults(res);
+        var extra = (res.masterTotal > 100 || res.stayTotal > 100) ? '（新しい順に各100件まで表示）' : '';
+        setMsg(prefix + '検索結果：打刻記録 ' + res.masterTotal + ' 件／滞在記録 ' + res.stayTotal + ' 件' + extra);
+      })
+      .catch(fail);
+  }
+
+  function renderDelResults(res) {
+    renderTable('delMasterArea',
+      ['日付', '名前', '役職', '活動', '区分', '備考', '操作'],
+      res.master.map(function (r) {
+        var noteDiv = document.createElement('div');
+        noteDiv.className = 'note-cell';
+        noteDiv.textContent = r.note;
+        return [r.dateStr, r.name, r.role, r.activity, markLabel(r.mark), noteDiv,
+          actionBtn('削除', function (done) { deleteRecord('master', r, done); }, 'danger')];
+      }),
+      '該当する打刻記録はありません');
+    renderTable('delStayArea',
+      ['日時', '名前', '役職', '活動', '入退室', '操作'],
+      res.stay.map(function (r) {
+        return [r.tsStr, r.name, r.role, r.activity,
+          r.status === '入室' ? tag('入室', 'ok') : tag('退室', 'mute'),
+          actionBtn('削除', function (done) { deleteRecord('stay', r, done); }, 'danger')];
+      }),
+      '該当する滞在記録はありません');
+  }
+
+  function deleteRecord(kind, r, done) {
+    var text;
+    if (kind === 'master') {
+      text = '以下の打刻記録を完全に削除しますか？\n\n' +
+        '日付：' + r.dateStr + '\n名前：' + r.name + '\n役職：' + r.role +
+        '\n活動：' + r.activity + '\n区分：' + markLabel(r.mark) +
+        (r.note ? '\n備考：' + r.note : '') +
+        '\n\n月次シートの該当セルも消去・更新されます。\n削除内容は修正履歴に記録されます。この操作は取り消せません。';
+    } else {
+      text = '以下の滞在記録を完全に削除しますか？\n\n' +
+        '日時：' + r.tsStr + '\n名前：' + r.name + '\n役職：' + r.role +
+        '\n活動：' + r.activity + '\n種別：' + r.status +
+        '\n\n※入室・退室は原則ペアで両方削除してください。\n削除内容は修正履歴に記録されます。この操作は取り消せません。';
+    }
+    if (!confirm(text)) { done(); return; }
+    setMsg('削除中...');
+    gasCall('adminDeleteRecord', [KEY, kind, r.row, r])
+      .then(function (res) {
+        done();
+        var extra = '';
+        if (res.monthly === 'cleared') extra = '（月次シートの該当セルも空欄にしました）';
+        else if (res.monthly === 'rewritten') extra = '（月次シートの該当セルは同日の別の記録の区分に書き直しました）';
+        else if (kind === 'master') extra = '（月次シートに該当セルが見つからなかったため、必要なら手動で確認してください）';
+        // 削除で行番号がずれるため検索結果を取り直し、全体の一覧も最新化する
+        searchRecords('削除しました' + extra + '／');
+        loadAll(true);
+      })
+      .catch(function (err) { done(); fail(err); });
+  }
+
+  if (KEY) loadAll();
+</script>
+
+</body>
+</html>
