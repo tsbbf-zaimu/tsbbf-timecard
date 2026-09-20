@@ -374,6 +374,13 @@
 
     <section class="sec-open">
       <h2><span class="sec-dot"></span>① 未退室者</h2>
+      <div class="sub" style="margin:0 0 10px;">帰りが一斉のときは、早退などで打刻を忘れている人だけチェックを外してから「選択した人を一斉に強制退室」を押してください（初期状態は全員チェック済みです）。</div>
+      <div class="bar" id="openBar" style="display:none">
+        <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-soft);cursor:pointer;">
+          <input type="checkbox" id="openSelectAll"> 全選択/解除
+        </label>
+        <button class="small danger" id="bulkCheckoutBtn" onclick="bulkForceCheckout()">選択した人を一斉に強制退室</button>
+      </div>
       <div id="openArea" class="scroll-x"></div>
     </section>
 
@@ -417,6 +424,7 @@
 <script src="./config.js"></script>
 <script>
   var KEY = sessionStorage.getItem('adminKey') || '';
+  var lastData = null; // 直近取得したgetAdminDataの結果（強制退室の即時反映用）
 
   function $(id) { return document.getElementById(id); }
 
@@ -431,6 +439,13 @@
 
   $('keyInput').addEventListener('keydown', function (e) {
     if (e.key === 'Enter') saveKey();
+  });
+
+  $('openSelectAll').addEventListener('change', function () {
+    var checked = this.checked;
+    document.querySelectorAll('#openArea .open-check').forEach(function (cb) {
+      cb.checked = checked;
+    });
   });
 
   function showLogin(message) {
@@ -538,6 +553,7 @@
         $('keyBox').style.display = 'none';
         $('content').style.display = 'block';
         fillMonths(data.months, data.month);
+        lastData = data;
         render(data);
         if (!silent) setMsg('最終更新：' + new Date().toLocaleTimeString() + '（表示月：' + data.month + '）');
       })
@@ -617,10 +633,19 @@
       'total-badge' + ((totalOpen + totalReview + totalPending) > 0 ? ' hot' : '');
 
     // ① 未退室者
+    var openRows = data.openSessions;
+    $('openBar').style.display = openRows.length > 0 ? 'flex' : 'none';
+    if ($('bulkCheckoutBtn')) $('bulkCheckoutBtn').disabled = openRows.length === 0;
     renderTable('openArea',
-      ['名前', '活動', '入室', '経過', '状態', '操作'],
-      data.openSessions.map(function (s) {
+      ['選択', '名前', '活動', '入室', '経過', '状態', '操作'],
+      openRows.map(function (s) {
+        var cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.className = 'open-check';
+        cb.checked = true; // 帰りは基本一斉のため、初期状態は全員チェック済みにしておく
+        cb.dataset.name = s.name;
         return [
+          cb,
           s.name,
           s.activity,
           s.inStr,
@@ -630,6 +655,7 @@
         ];
       }),
       '未退室者はいません');
+    if ($('openSelectAll')) $('openSelectAll').checked = true;
 
     // ② 要確認
     renderTable('reviewArea',
@@ -707,6 +733,15 @@
       'スキップ記録はありません');
   }
 
+  // 未退室者一覧から指定の名前を取り除いてその場で再描画する（サーバー再取得を待たずに反映するため）
+  function removeOpenSessionsLocally_(names) {
+    if (!lastData) return;
+    var nameSet = {};
+    names.forEach(function (n) { nameSet[n] = true; });
+    lastData.openSessions = lastData.openSessions.filter(function (s) { return !nameSet[s.name]; });
+    render(lastData);
+  }
+
   function forceCheckout(name, done) {
     if (!confirm(name + ' さんを強制退室させますか？\n区分は低い方（う/あ）で仮記録され、要確認一覧に載ります。')) {
       done();
@@ -715,10 +750,41 @@
     gasCall('adminForceCheckout', [KEY, name])
       .then(function (res) {
         done();
-        if (res.result === 'not_in') setMsg('対象の未退室記録が見つかりませんでした。', true);
-        loadAll();
+        if (res.result === 'not_in') {
+          setMsg('対象の未退室記録が見つかりませんでした。', true);
+        } else {
+          removeOpenSessionsLocally_([name]);
+          setMsg(name + ' さんを強制退室にしました');
+        }
+        loadAll(true); // 統計バッジ等を含めて裏で最新化（表示は既に更新済み）
       })
       .catch(function (err) { done(); fail(err); });
+  }
+
+  // 未退室者一覧でチェックが入っている人だけをまとめて強制退室する
+  function bulkForceCheckout() {
+    var checks = Array.prototype.slice.call(document.querySelectorAll('#openArea .open-check:checked'));
+    var names = checks.map(function (cb) { return cb.dataset.name; });
+    if (names.length === 0) {
+      setMsg('対象者にチェックが入っていません。', true);
+      return;
+    }
+    if (!confirm('以下の ' + names.length + ' 名を一斉に強制退室させますか？\n区分は低い方（う/あ）で仮記録され、要確認一覧に載ります。\n\n' + names.join('、'))) {
+      return;
+    }
+    var btn = $('bulkCheckoutBtn');
+    btn.disabled = true;
+    setMsg('一斉強制退室を処理中...');
+    gasCall('adminForceCheckoutBulk', [KEY, names])
+      .then(function (res) {
+        btn.disabled = false;
+        removeOpenSessionsLocally_(names);
+        var msg = res.okCount + ' 名を強制退室にしました';
+        if (res.notInCount > 0) msg += '（' + res.notInCount + ' 名は対象の未退室記録が見つかりませんでした）';
+        setMsg(msg);
+        loadAll(true); // 統計バッジ等を含めて裏で最新化（表示は既に更新済み）
+      })
+      .catch(function (err) { btn.disabled = false; fail(err); });
   }
 
   function markReviewed(r, done) {
