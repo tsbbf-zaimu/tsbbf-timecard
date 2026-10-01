@@ -8,8 +8,8 @@ GitHub Pages で配信し、データの読み書きは Google Apps Script（GAS
 
 | ファイル | 役割 |
 |---|---|
-| `index.html` | 打刻画面（部員用）。QRコードのURL `…/index.html?token=xxx` で開く |
-| `fix.html` | 修正申請ページ（部員用） |
+| `index.html` | 打刻画面（委員用）。QRコードのURL `…/index.html?token=xxx` で開く |
+| `fix.html` | 修正申請ページ（委員用） |
 | `admin.html` | 管理画面（財務部用・合言葉が必要） |
 | `config.js` | GASのURL設定と、API呼び出しの共通処理（gasCall） |
 

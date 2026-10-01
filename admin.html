@@ -392,7 +392,7 @@
 
     <section class="sec-corr">
       <h2><span class="sec-dot"></span>③ 修正申請</h2>
-      <div class="sub" style="margin:0 0 10px;">部員が修正申請ページから送信した申請です。「承認」を押すと滞在記録・打刻記録が自動で修正され、区分（あいうえ）も再計算されます。未処理はすべての月から表示し、承認・却下済みと修正履歴は上で選択した月の分のみ表示します。</div>
+      <div class="sub" style="margin:0 0 10px;">委員が修正申請ページから送信した申請です。「承認」を押すと滞在記録・打刻記録が自動で修正され、区分（あいうえ）も再計算されます。未処理はすべての月から表示し、承認・却下済みと修正履歴は上で選択した月の分のみ表示します。</div>
       <div class="counts" id="corrCounts"></div>
       <div id="corrArea" class="scroll-x"></div>
       <h3>修正履歴（選択月・直近50件）</h3>
@@ -512,7 +512,7 @@
   }
 
   // 区分（あいうえ）の意味（judgeMark_ と同じ対応表）
-  // あ＝部員・日当B／い＝部員・日当A／う＝部署長・日当B／え＝部署長・日当A
+  // あ＝委員・日当B／い＝委員・日当A／う＝部署長・日当B／え＝部署長・日当A
   var MARK_INFO = {
     'あ': '日当B（低い方）',
     'い': '日当A（高い方）',
@@ -576,14 +576,14 @@
   }
 
   function syncNewMembers() {
-    if (!confirm('テンプレシートの内容で以下を実行しますか？\n・役職マスタの同期（打刻画面の名前ドロップダウンに反映）\n・今月の月次シートに、まだ載っていないメンバーの行を追加')) return;
+    if (!confirm('テンプレシートに居て今月の月次シートにまだ載っていないメンバーの行を追加しますか？\n（打刻画面の名前ドロップダウンはテンプレを直接見ているため、このボタンを押さなくても常に最新です）')) return;
     setMsg('新メンバーを反映中...');
     gasCall('adminSyncNewMembers', [KEY])
       .then(function (res) {
         if (res.added.length > 0) {
-          setMsg('役職マスタを同期し、月次シート（' + res.month + '）に ' + res.added.length + ' 名を追加しました：' + res.added.join('、'));
+          setMsg('月次シート（' + res.month + '）に ' + res.added.length + ' 名を追加しました：' + res.added.join('、'));
         } else {
-          setMsg('役職マスタを同期しました。月次シート（' + res.month + '）への追加が必要なメンバーはいませんでした');
+          setMsg('月次シート（' + res.month + '）への追加が必要なメンバーはいませんでした');
         }
         loadAll();
       })
