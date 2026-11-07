@@ -248,6 +248,10 @@
   section.sec-corr .sec-dot { background: var(--aqua); }
   section.sec-skip .sec-dot { background: #C4D3DB; }
   section.sec-del .sec-dot { background: var(--bad); }
+  section.sec-travel .sec-dot { background: var(--good); }
+  .daily-toggle { display: flex; align-items: center; gap: 6px; white-space: nowrap; cursor: pointer; }
+  .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.group-start td { border-top: 2px solid var(--mist); }
 
   /* ---- 記録の削除 ---- */
   button.small.danger { background: var(--bad); }
@@ -337,7 +341,7 @@
       <div>
         <div class="greet-eyebrow">TOKAI STUDENT BASKETBALL FEDERATION</div>
         <h1>打刻管理（財務部）</h1>
-        <div class="sub">未退室者・要確認記録・修正申請・スキップ記録の確認と、誤打刻の削除ができます</div>
+        <div class="sub">未退室者・要確認記録・修正申請・追加交通費申請・スキップ記録の確認と、誤打刻の削除ができます</div>
       </div>
     </div>
     <div class="controls">
@@ -399,14 +403,31 @@
       <div id="corrLogArea" class="scroll-x"></div>
     </section>
 
+    <section class="sec-travel">
+      <h2><span class="sec-dot"></span>④ 追加交通費申請</h2>
+      <div class="sub" style="margin:0 0 10px;">委員が追加交通費ページから申請した明細です（旅費規程 第2条3項）。日当は行ごとに「あり／なし」を選んでから「承認」を押してください（初期値：会議＝あり、事務所＝なし／日当額は部署長1,500円・委員1,000円）。承認すると、明細の日付の月の月次シート末尾「追加交通費・追加日当・追加合計」がその月の承認済み全件から再集計されます。未処理はすべての月から表示し、処理済みと人別合計は上で選択した月（明細の日付）の分を表示します。</div>
+      <div class="counts" id="travelCounts"></div>
+      <div class="bar" id="travelBar" style="display:none">
+        <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-soft);cursor:pointer;">
+          <input type="checkbox" id="travelSelectAll"> 全選択/解除
+        </label>
+        <button class="small" id="travelApproveSel" onclick="approveTravelSelected()">選択した明細を承認</button>
+        <button class="small ghost" id="travelRejectSel" onclick="rejectTravelSelected()">選択した明細を却下</button>
+      </div>
+      <div id="travelArea" class="scroll-x"></div>
+      <h3 style="display:flex;align-items:center;gap:10px;">人別合計（選択月・承認済み）
+        <button class="small ghost" onclick="rebuildTravelMonthly()">月次シートへ再集計</button></h3>
+      <div id="travelSumArea" class="scroll-x"></div>
+    </section>
+
     <section class="sec-skip">
-      <h2><span class="sec-dot"></span>④ 日当対象外スキップ記録</h2>
+      <h2><span class="sec-dot"></span>⑤ 日当対象外スキップ記録</h2>
       <div class="sub" style="margin:0 0 10px;">週内事務所制限・同日重複により打刻記録に追加しなかった退室打刻の一覧です（入退室時刻は滞在記録に保存されています）。上で選択した月の分を表示します。</div>
       <div id="skipArea" class="scroll-x"></div>
     </section>
 
     <section class="sec-del">
-      <h2><span class="sec-dot"></span>⑤ 記録の削除（誤打刻の取り消し）</h2>
+      <h2><span class="sec-dot"></span>⑥ 記録の削除（誤打刻の取り消し）</h2>
       <div class="sub" style="margin:0 0 10px;">テスト打刻や誤った名前での打刻を、検索して完全に削除できます。削除した内容は③の「修正履歴」に記録されます（いつ・何を削除したか）。打刻記録を削除すると、月次シート（交通費スプシ）の該当セルも自動で消去・更新されます。<br>※滞在記録の入室・退室はセットです。片方だけ削除すると未退室扱いになったり退室忘れ補完が誤作動したりするため、原則ペアで両方削除してください。</div>
       <div class="del-form">
         <input id="delName" placeholder="名前（一部でも可）">
@@ -627,10 +648,12 @@
     var totalOpen = data.openSessions.length;
     var totalReview = data.pendingReview.length;
     var totalPending = data.corrections.counts.pending;
+    var totalTravel = data.travel ? data.travel.counts.pending : 0;
     $('totalBadge').textContent =
-      '全期間の要対応：未退室 ' + totalOpen + '・要確認 ' + totalReview + '・修正申請 ' + totalPending;
+      '全期間の要対応：未退室 ' + totalOpen + '・要確認 ' + totalReview + '・修正申請 ' + totalPending +
+      '・追加交通費 ' + totalTravel;
     $('totalBadge').className =
-      'total-badge' + ((totalOpen + totalReview + totalPending) > 0 ? ' hot' : '');
+      'total-badge' + ((totalOpen + totalReview + totalPending + totalTravel) > 0 ? ' hot' : '');
 
     // ① 未退室者
     var openRows = data.openSessions;
@@ -723,7 +746,10 @@
       }),
       '修正履歴はありません');
 
-    // ④ スキップ記録
+    // ④ 追加交通費申請
+    if (data.travel) renderTravel(data.travel, data.month);
+
+    // ⑤ スキップ記録
     renderTable('skipArea',
       ['記録日時', '対象日', '名前', '役職', '活動', '理由'],
       data.skips.map(function (r) {
@@ -847,7 +873,180 @@
       .catch(function (err) { done(); fail(err); });
   }
 
-  // ---- ⑤ 記録の削除 ----
+  // ---- ④ 追加交通費申請 ----
+  function yen(n) { return Number(n || 0).toLocaleString('ja-JP') + '円'; }
+  function numCell(n) {
+    var s = document.createElement('div');
+    s.className = 'num';
+    s.textContent = yen(n);
+    return s;
+  }
+
+  $('travelSelectAll').addEventListener('change', function () {
+    var checked = this.checked;
+    document.querySelectorAll('#travelArea .travel-check').forEach(function (cb) { cb.checked = checked; });
+  });
+
+  function renderTravel(t, month) {
+    $('travelCounts').innerHTML = '';
+    $('travelCounts').appendChild(document.createTextNode('未処理 '));
+    var b = document.createElement('b');
+    b.textContent = t.counts.pending;
+    $('travelCounts').appendChild(b);
+    $('travelCounts').appendChild(document.createTextNode(
+      ' 件 ／ 承認 ' + t.counts.approved + ' 件 ／ 却下 ' + t.counts.rejected + ' 件（処理済みは明細の日付が ' + month + ' のもの）'));
+
+    var pendingCount = t.rows.filter(function (r) { return r.status === '未処理'; }).length;
+    $('travelBar').style.display = pendingCount > 0 ? 'flex' : 'none';
+    $('travelSelectAll').checked = false;
+
+    var groupStarts = [];
+    var prevId = null;
+    renderTable('travelArea',
+      ['選択', '申請日時', '名前', '日付', '活動', '会議内容', '交通費', '日当', '状態／操作'],
+      t.rows.map(function (r, i) {
+        var pending = r.status === '未処理';
+        if (r.id !== prevId) groupStarts.push(i);
+        prevId = r.id;
+
+        var sel = '';
+        var daily;
+        var last;
+        if (pending) {
+          sel = document.createElement('input');
+          sel.type = 'checkbox';
+          sel.className = 'travel-check';
+          sel.travelRow = r;
+
+          // 日当あり/なし（初期値：会議＝あり、事務所＝なし）。r.dailyOn に選択状態を持たせる
+          r.dailyOn = r.defaultDaily;
+          daily = document.createElement('label');
+          daily.className = 'daily-toggle';
+          var cb = document.createElement('input');
+          cb.type = 'checkbox';
+          cb.checked = r.dailyOn;
+          var txt = document.createElement('span');
+          var paint = function () {
+            txt.textContent = r.dailyUnit
+              ? (cb.checked ? 'あり ' + yen(r.dailyUnit) : 'なし')
+              : '役職不明（テンプレに名前なし）';
+          };
+          cb.addEventListener('change', function () { r.dailyOn = cb.checked; paint(); });
+          paint();
+          daily.appendChild(cb);
+          daily.appendChild(txt);
+
+          last = document.createElement('div');
+          last.appendChild(actionBtn('承認', function (done) { approveTravel([r], done); }));
+          last.appendChild(document.createTextNode(' '));
+          last.appendChild(actionBtn('却下', function (done) { rejectTravel([r], done); }, 'ghost'));
+        } else {
+          daily = r.status === '承認'
+            ? (r.daily === 'あり' ? 'あり ' + yen(r.dailyAmt) : 'なし')
+            : '';
+          last = r.status === '承認' ? tag('承認', 'ok') : tag(r.status, r.status === '却下' ? 'bad' : 'mute');
+        }
+        var memo = document.createElement('div');
+        memo.className = 'note-cell';
+        memo.textContent = r.memo;
+        var nameCell = r.name + (r.role ? '（' + r.role + '）' : '');
+        return [sel, r.ts, nameCell, r.dateStr, r.activity, memo, numCell(r.fare), daily, last];
+      }),
+      '追加交通費の申請はありません');
+    // 1回の申請（申請ID）ごとに区切り線を入れる
+    var trs = document.querySelectorAll('#travelArea tbody tr');
+    groupStarts.forEach(function (i) { if (i > 0 && trs[i]) trs[i].classList.add('group-start'); });
+
+    renderTable('travelSumArea',
+      ['名前', '件数', '追加交通費', '追加日当', '追加合計'],
+      t.summary.map(function (s) {
+        return [s.name, s.count + '件', numCell(s.fare), numCell(s.daily), numCell(s.total)];
+      }),
+      month + ' の承認済みの追加交通費はありません');
+  }
+
+  function travelItems(rows) {
+    return rows.map(function (r) {
+      return { row: r.row, id: r.id, name: r.name, dateStr: r.dateStr, daily: !!r.dailyOn };
+    });
+  }
+
+  function selectedTravelRows() {
+    return Array.prototype.slice.call(document.querySelectorAll('#travelArea .travel-check:checked'))
+      .map(function (cb) { return cb.travelRow; });
+  }
+
+  function monthlyMsg(res) {
+    return (res.monthly || []).map(function (m) {
+      var s = '月次シート ' + m.month + ' を再集計（' + m.people + '名）';
+      if (m.notFound.length) s += '／※月次シートに名前行が無いため未反映：' + m.notFound.join('、');
+      return s;
+    }).join('　');
+  }
+
+  function approveTravel(rows, done) {
+    var total = 0;
+    var lines = rows.map(function (r) {
+      var d = r.dailyOn && r.dailyUnit ? r.dailyUnit : 0;
+      total += r.fare + d;
+      return r.name + '　' + r.dateStr + '　' + r.activity + '　交通費 ' + yen(r.fare) + '・日当 ' + (r.dailyOn ? yen(r.dailyUnit) : 'なし');
+    });
+    if (!confirm('以下の ' + rows.length + ' 件を承認して、月次シートに反映しますか？\n\n' +
+        lines.join('\n') + '\n\n合計 ' + yen(total))) { done(); return; }
+    setMsg('追加交通費を承認中...');
+    gasCall('adminApproveTravel', [KEY, travelItems(rows)])
+      .then(function (res) {
+        done();
+        setMsg(res.approved + ' 件を承認しました。' + monthlyMsg(res));
+        loadAll(true);
+      })
+      .catch(function (err) { done(); fail(err); });
+  }
+
+  function rejectTravel(rows, done) {
+    var lines = rows.map(function (r) { return r.name + '　' + r.dateStr + '　' + r.activity + '　' + yen(r.fare); });
+    if (!confirm('以下の ' + rows.length + ' 件を却下しますか？（月次シートには反映されません）\n\n' + lines.join('\n'))) {
+      done();
+      return;
+    }
+    setMsg('却下中...');
+    gasCall('adminRejectTravel', [KEY, travelItems(rows)])
+      .then(function (res) {
+        done();
+        setMsg(res.rejected + ' 件を却下しました');
+        loadAll(true);
+      })
+      .catch(function (err) { done(); fail(err); });
+  }
+
+  function approveTravelSelected() {
+    var rows = selectedTravelRows();
+    if (rows.length === 0) { setMsg('承認する明細にチェックを入れてください。', true); return; }
+    var btn = $('travelApproveSel');
+    btn.disabled = true;
+    approveTravel(rows, function () { btn.disabled = false; });
+  }
+
+  function rejectTravelSelected() {
+    var rows = selectedTravelRows();
+    if (rows.length === 0) { setMsg('却下する明細にチェックを入れてください。', true); return; }
+    var btn = $('travelRejectSel');
+    btn.disabled = true;
+    rejectTravel(rows, function () { btn.disabled = false; });
+  }
+
+  function rebuildTravelMonthly() {
+    var month = $('monthSelect').value;
+    if (!confirm(month + ' の月次シートの「追加交通費・追加日当・追加合計」を、承認済みの明細から作り直しますか？')) return;
+    setMsg('再集計中...');
+    gasCall('adminRebuildTravelMonthly', [KEY, month])
+      .then(function (res) {
+        setMsg(monthlyMsg({ monthly: [res] }));
+      })
+      .catch(fail);
+  }
+
+  // ---- ⑥ 記録の削除 ----
   function searchRecords(prefixMsg) {
     var name = $('delName').value.trim();
     var d = $('delDate').value; // yyyy-mm-dd

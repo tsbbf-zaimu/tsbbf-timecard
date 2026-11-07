@@ -10,6 +10,7 @@ GitHub Pages で配信し、データの読み書きは Google Apps Script（GAS
 |---|---|
 | `index.html` | 打刻画面（委員用）。QRコードのURL `…/index.html?token=xxx` で開く |
 | `fix.html` | 修正申請ページ（委員用） |
+| `travel.html` | 追加交通費の申請ページ（委員用・旅費規程 第2条3項。事務所・会議の往復交通費を月末にまとめて申請） |
 | `admin.html` | 管理画面（財務部用・合言葉が必要） |
 | `config.js` | GASのURL設定と、API呼び出しの共通処理（gasCall） |
 

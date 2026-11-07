@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>追加交通費の申請</title>
+<style>
+  :root {
+    --deep: #0F3B57;
+    --primary: #1D6E96;
+    --aqua: #5FB8D6;
+    --mist: #E4F3F8;
+    --paper: #FBFDFE;
+    --ink: #16323F;
+    --ink-soft: #5A7686;
+    --good: #2E9E6B;
+    --bad: #D64545;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body { height: 100%; }
+
+  body {
+    font-family: "Hiragino Sans", "Noto Sans JP", "Yu Gothic", system-ui, sans-serif;
+    background: var(--paper);
+    color: var(--ink);
+    min-height: 100vh;
+    display: flex;
+    padding: 24px 16px;
+    overflow-x: hidden;
+  }
+
+  .ripple-bg {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    overflow: hidden;
+    pointer-events: none;
+  }
+  /* 波の背景は打刻画面・修正申請ページと共通 */
+  .ripple-bg svg {
+    position: absolute;
+    width: 200%;
+    height: 30vh;
+    min-height: 190px;
+    will-change: transform;
+  }
+  .ripple-bg .r1 { top: -4%; opacity: 0.55; animation: waveDriftA 14s linear infinite; }
+  .ripple-bg .r2 { bottom: -6%; opacity: 0.4; transform: scaleY(-1); animation: waveDriftB 20s linear infinite; }
+  @keyframes waveDriftA {
+    from { transform: translateX(0); }
+    to   { transform: translateX(-50%); }
+  }
+  @keyframes waveDriftB {
+    from { transform: scaleY(-1) translateX(-50%); }
+    to   { transform: scaleY(-1) translateX(0); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ripple-bg .r1, .ripple-bg .r2 { animation: none; }
+  }
+
+  .card {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    max-width: 420px;
+    margin: auto;
+  }
+
+  .panel {
+    background: white;
+    border-radius: 28px;
+    padding: 28px 20px 24px;
+    box-shadow: 0 18px 45px -20px rgba(15, 59, 87, 0.35), 0 2px 8px rgba(15,59,87,0.06);
+    border: 1px solid rgba(95, 184, 214, 0.18);
+  }
+
+  .greet-eyebrow {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    color: var(--aqua);
+    text-transform: uppercase;
+  }
+  .page-title {
+    font-size: 19px;
+    font-weight: 700;
+    color: var(--deep);
+    margin: 4px 0 2px;
+  }
+  .page-sub {
+    font-size: 12px;
+    color: var(--ink-soft);
+    margin-bottom: 20px;
+    line-height: 1.6;
+  }
+
+  .section-label {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--ink-soft);
+    letter-spacing: 0.06em;
+    margin-bottom: 8px;
+  }
+
+  .field-input {
+    width: 100%;
+    min-width: 0; /* iOSのdate入力がはみ出すのを防ぐ */
+    background: var(--mist);
+    border: 2px solid transparent;
+    border-radius: 14px;
+    padding: 12px 14px;
+    font-size: 16px; /* 16px未満だとiOSが入力時にズームする */
+    font-weight: 600;
+    color: var(--deep);
+    font-family: inherit;
+    margin-bottom: 16px;
+    -webkit-appearance: none;
+    appearance: none;
+  }
+  select.field-input {
+    background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="%230F3B57" stroke-width="3"><path d="M6 9l6 6 6-6"/></svg>');
+    background-repeat: no-repeat;
+    background-position: right 14px center;
+  }
+  .field-input:focus {
+    outline: none;
+    border-color: var(--primary);
+    background-color: white;
+  }
+  .field-input:disabled { opacity: 0.6; }
+  .field-input.invalid { border-color: var(--bad); }
+
+  /* ---- 明細行 ---- */
+  .line {
+    border: 2px solid var(--mist);
+    border-radius: 20px;
+    padding: 14px 14px 2px;
+    margin-bottom: 12px;
+  }
+  .line.invalid { border-color: #F2B8B8; }
+  .line-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+  }
+  .line-no {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--primary);
+  }
+  .line-del {
+    background: none;
+    border: none;
+    color: var(--ink-soft);
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 700;
+    padding: 8px 4px 8px 12px;
+    cursor: pointer;
+  }
+  .line-del:active { color: var(--bad); }
+  .line .field-input { margin-bottom: 12px; }
+  .line .section-label { margin-bottom: 6px; }
+
+  .act-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+  .act-btn {
+    background: var(--mist);
+    border: 2px solid transparent;
+    border-radius: 14px;
+    padding: 12px 6px;
+    font-family: inherit;
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--deep);
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .act-btn:active { transform: scale(0.97); }
+  .act-btn.selected {
+    background: white;
+    border-color: var(--primary);
+    box-shadow: 0 4px 14px -6px rgba(29,110,150,0.35);
+  }
+
+  .yen-wrap { position: relative; }
+  .yen-wrap .field-input { padding-right: 40px; text-align: right; font-variant-numeric: tabular-nums; }
+  .yen-wrap .unit {
+    position: absolute;
+    right: 16px;
+    top: 14px;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--ink-soft);
+    pointer-events: none;
+  }
+
+  .add-btn {
+    width: 100%;
+    background: white;
+    color: var(--primary);
+    border: 2px dashed var(--aqua);
+    border-radius: 16px;
+    padding: 14px;
+    font-size: 15px;
+    font-weight: 700;
+    font-family: inherit;
+    cursor: pointer;
+    margin-bottom: 16px;
+  }
+  .add-btn:active { transform: scale(0.98); }
+  .add-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .total-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    background: var(--mist);
+    border-radius: 14px;
+    padding: 12px 16px;
+    margin-bottom: 16px;
+  }
+  .total-row .k { font-size: 12px; font-weight: 700; color: var(--ink-soft); }
+  .total-row .v { font-size: 20px; font-weight: 700; color: var(--deep); font-variant-numeric: tabular-nums; }
+
+  .error-box {
+    display: none;
+    background: #FDEEEE;
+    color: var(--bad);
+    border-radius: 12px;
+    padding: 12px 14px;
+    font-size: 12px;
+    font-weight: 600;
+    margin-bottom: 16px;
+    line-height: 1.6;
+    white-space: pre-line;
+  }
+  .error-box.show { display: block; }
+
+  .submit-btn {
+    width: 100%;
+    background: linear-gradient(135deg, var(--primary), var(--deep));
+    color: white;
+    border: none;
+    border-radius: 16px;
+    padding: 16px;
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    font-family: inherit;
+    cursor: pointer;
+    transition: opacity 0.15s ease, transform 0.15s ease;
+    box-shadow: 0 10px 24px -10px rgba(15,59,87,0.5);
+  }
+  .submit-btn:disabled { opacity: 0.4; cursor: not-allowed; box-shadow: none; }
+  .submit-btn:active:not(:disabled) { transform: scale(0.98); }
+
+  /* success */
+  .success-panel { display: none; text-align: center; padding: 40px 24px 28px; }
+  .success-panel.show { display: block; }
+  .panel.hide-form { display: none; }
+  .success-ring {
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    background: var(--mist);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 18px;
+    animation: pop 0.4s cubic-bezier(.34,1.56,.64,1);
+  }
+  @keyframes pop {
+    0% { transform: scale(0); opacity: 0; }
+    100% { transform: scale(1); opacity: 1; }
+  }
+  .success-ring svg { width: 32px; height: 32px; }
+  .success-title { font-size: 18px; font-weight: 700; color: var(--deep); margin-bottom: 6px; }
+  .success-sub { font-size: 13px; color: var(--ink-soft); line-height: 1.7; }
+  .success-total {
+    background: var(--mist);
+    border-radius: 16px;
+    padding: 14px 16px;
+    margin: 18px 0 4px;
+  }
+  .success-total .k { font-size: 12px; font-weight: 700; color: var(--ink-soft); }
+  .success-total .v { font-size: 26px; font-weight: 700; color: var(--deep); font-variant-numeric: tabular-nums; }
+  .ghost-btn {
+    margin-top: 20px;
+    width: 100%;
+    background: white;
+    color: var(--primary);
+    border: 2px solid var(--mist);
+    border-radius: 16px;
+    padding: 14px;
+    font-size: 14px;
+    font-weight: 700;
+    font-family: inherit;
+    cursor: pointer;
+  }
+  .ghost-btn:active { transform: scale(0.98); }
+
+  .back-link {
+    text-align: center;
+    margin-top: 16px;
+    font-size: 12px;
+  }
+  .back-link a { color: var(--ink-soft); text-decoration: underline; }
+</style>
+</head>
+<body>
+
+<div class="ripple-bg">
+  <svg class="r1" viewBox="0 0 800 120" preserveAspectRatio="none"><path d="M0,60 C100,110 300,10 400,60 C500,110 700,10 800,60 L800,0 L0,0 Z" fill="#5FB8D6"/></svg>
+  <svg class="r2" viewBox="0 0 800 120" preserveAspectRatio="none"><path d="M0,60 C100,110 300,10 400,60 C500,110 700,10 800,60 L800,0 L0,0 Z" fill="#1D6E96"/></svg>
+</div>
+
+<div class="card">
+  <div class="panel" id="formPanel">
+    <div class="greet-eyebrow">TOKAI STUDENT BASKETBALL FEDERATION</div>
+    <div class="page-title">追加交通費の申請</div>
+    <div class="page-sub">事務所・会議で来たときの交通費（往復）を、月末にその月の分をまとめて申請してね。財務部が確認して承認します。</div>
+
+    <div class="section-label">あなたの名前</div>
+    <select class="field-input" id="nameSelect" disabled>
+      <option value="">読み込み中...</option>
+    </select>
+
+    <div class="section-label">明細</div>
+    <div id="lines"></div>
+    <button type="button" class="add-btn" id="addBtn" onclick="addLine(true)">＋ 行を追加</button>
+
+    <div class="total-row">
+      <span class="k" id="totalLabel">合計（0件）</span>
+      <span class="v" id="totalValue">0円</span>
+    </div>
+
+    <div class="error-box" id="errorBox"></div>
+
+    <button class="submit-btn" id="submitBtn" onclick="submitClaim()" disabled>まとめて申請する</button>
+  </div>
+
+  <div class="panel success-panel" id="successPanel">
+    <div class="success-ring">
+      <svg viewBox="0 0 24 24" fill="none"><path d="M20 6L9 17l-5-5" stroke="#1D6E96" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </div>
+    <div class="success-title">申請を送信しました</div>
+    <div class="success-sub" id="successSub"></div>
+    <div class="success-total">
+      <div class="k">交通費の合計</div>
+      <div class="v" id="successTotal"></div>
+    </div>
+    <div class="success-sub">財務部が内容を確認して承認します。</div>
+    <button class="ghost-btn" onclick="resetForm()">続けて別の申請をする</button>
+  </div>
+
+  <div class="back-link">
+    <a href="./index.html" target="_top">打刻画面に戻る</a>
+  </div>
+</div>
+
+<script src="./config.js"></script>
+<script>
+  var ACTIVITIES = ['事務所', '会議'];
+  var FARE_MAX = 99999;
+  var MAX_LINES = 62;
+
+  function $(id) { return document.getElementById(id); }
+  function pad(n) { return String(n).length < 2 ? '0' + n : String(n); }
+  function yen(n) { return Number(n).toLocaleString('ja-JP') + '円'; }
+  function todayStr() {
+    var d = new Date();
+    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+  }
+
+  function showError(message) {
+    $('errorBox').textContent = message;
+    $('errorBox').classList.add('show');
+  }
+  function clearError() {
+    $('errorBox').textContent = '';
+    $('errorBox').classList.remove('show');
+  }
+
+  // 全角数字・カンマ・円記号などを取り除いて半角数字だけにする
+  function normFare(s) {
+    return String(s || '')
+      .replace(/[０-９]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); })
+      .replace(/[^0-9]/g, '');
+  }
+
+  function lineEls() { return Array.prototype.slice.call(document.querySelectorAll('#lines .line')); }
+
+  function addLine(focus) {
+    var lines = lineEls();
+    if (lines.length >= MAX_LINES) return;
+    var prev = lines[lines.length - 1];
+
+    var box = document.createElement('div');
+    box.className = 'line';
+    box.innerHTML =
+      '<div class="line-head"><span class="line-no"></span>' +
+      '<button type="button" class="line-del">削除</button></div>' +
+      '<div class="section-label">日付</div>' +
+      '<input type="date" class="field-input f-date">' +
+      '<div class="section-label">活動</div>' +
+      '<div class="act-grid"></div>' +
+      '<div class="section-label f-memo-label">会議内容</div>' +
+      '<input type="text" class="field-input f-memo" maxlength="200">' +
+      '<div class="section-label">交通費（往復）</div>' +
+      '<div class="yen-wrap"><input type="text" class="field-input f-fare" inputmode="numeric" pattern="[0-9]*" placeholder="例：1240" autocomplete="off"><span class="unit">円</span></div>';
+
+    var date = box.querySelector('.f-date');
+    date.max = todayStr();
+
+    var grid = box.querySelector('.act-grid');
+    ACTIVITIES.forEach(function (act) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'act-btn';
+      b.textContent = act;
+      b.dataset.act = act;
+      b.addEventListener('click', function () { setAct(box, act); });
+      grid.appendChild(b);
+    });
+
+    var fare = box.querySelector('.f-fare');
+    fare.addEventListener('input', function () {
+      var v = normFare(fare.value);
+      if (fare.value !== v) fare.value = v;
+      updateTotal();
+    });
+    box.querySelector('.line-del').addEventListener('click', function () {
+      box.remove();
+      if (lineEls().length === 0) addLine();
+      renumber();
+      updateTotal();
+    });
+    box.addEventListener('input', function () { box.classList.remove('invalid'); });
+
+    // 同じ経路で何度も来ることが多いので、前の行の活動と金額を引き継ぐ（日付は空欄）
+    setAct(box, prev ? prev.dataset.act || '' : '');
+    if (prev) fare.value = prev.querySelector('.f-fare').value;
+
+    $('lines').appendChild(box);
+    renumber();
+    updateTotal();
+    if (focus) {
+      box.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }
+
+  function setAct(box, act) {
+    box.dataset.act = act;
+    box.querySelectorAll('.act-btn').forEach(function (b) {
+      b.classList.toggle('selected', b.dataset.act === act);
+    });
+    var memo = box.querySelector('.f-memo');
+    var label = box.querySelector('.f-memo-label');
+    if (act === '会議') {
+      label.textContent = '会議内容（必須）';
+      memo.placeholder = '例：11月定例理事会';
+    } else {
+      label.textContent = '会議内容・メモ（任意）';
+      memo.placeholder = '事務所の場合は空欄でOK';
+    }
+    box.classList.remove('invalid');
+  }
+
+  function renumber() {
+    var lines = lineEls();
+    lines.forEach(function (box, i) {
+      box.querySelector('.line-no').textContent = '明細 ' + (i + 1);
+      box.querySelector('.line-del').style.visibility = lines.length > 1 ? 'visible' : 'hidden';
+    });
+    $('addBtn').disabled = lines.length >= MAX_LINES;
+  }
+
+  function updateTotal() {
+    var lines = lineEls();
+    var total = 0;
+    lines.forEach(function (box) {
+      var v = Number(box.querySelector('.f-fare').value);
+      if (v > 0) total += v;
+    });
+    $('totalLabel').textContent = '合計（' + lines.length + '件）';
+    $('totalValue').textContent = yen(total);
+    $('submitBtn').textContent = 'まとめて申請する（' + lines.length + '件）';
+  }
+
+  function collect() {
+    var errors = [];
+    var today = todayStr();
+    var seen = {};
+    var out = [];
+    lineEls().forEach(function (box, i) {
+      var no = (i + 1) + '行目：';
+      var date = box.querySelector('.f-date').value;
+      var act = box.dataset.act || '';
+      var memo = box.querySelector('.f-memo').value.trim();
+      var fareStr = normFare(box.querySelector('.f-fare').value);
+      var fare = Number(fareStr);
+      var err = '';
+      if (!date) err = '日付を選択してください。';
+      else if (date > today) err = '未来の日付は申請できません。';
+      else if (!act) err = '活動（事務所／会議）を選んでください。';
+      else if (act === '会議' && !memo) err = '会議の内容を入力してください。';
+      else if (!fareStr || fare < 1 || fare > FARE_MAX) err = '交通費は1〜99,999円の整数で入力してください。';
+      else {
+        var key = date + '|' + act + '|' + fare;
+        if (seen[key]) err = '同じ日付・活動・金額の行が' + seen[key] + '行目にあります。';
+        else seen[key] = i + 1;
+      }
+      box.classList.toggle('invalid', !!err);
+      if (err) errors.push(no + err);
+      out.push({ date: date, activity: act, memo: memo, fare: fare });
+    });
+    return { errors: errors, lines: out };
+  }
+
+  function initialize() {
+    addLine();
+    gasCall('getTravelInitState', [])
+      .then(function (data) {
+        if (data.fareMax) FARE_MAX = data.fareMax;
+        if (data.maxLines) MAX_LINES = data.maxLines;
+        var select = $('nameSelect');
+        select.innerHTML = '';
+        var placeholder = document.createElement('option');
+        placeholder.value = '';
+        placeholder.textContent = '選択してください';
+        select.appendChild(placeholder);
+
+        var groups = {};
+        data.members.forEach(function (m) {
+          var dept = m.dept || 'その他';
+          if (!groups[dept]) {
+            groups[dept] = document.createElement('optgroup');
+            groups[dept].label = dept;
+            select.appendChild(groups[dept]);
+          }
+          var opt = document.createElement('option');
+          opt.value = m.name;
+          opt.textContent = m.name;
+          groups[dept].appendChild(opt);
+        });
+        select.disabled = false;
+        $('submitBtn').disabled = false;
+      })
+      .catch(function (err) {
+        showError(err.message || String(err));
+      });
+  }
+  initialize();
+
+  function submitClaim() {
+    clearError();
+    var name = $('nameSelect').value;
+    if (!name) { showError('名前を選択してください。'); return; }
+    var c = collect();
+    if (c.errors.length) { showError(c.errors.join('\n')); return; }
+
+    var total = c.lines.reduce(function (s, l) { return s + l.fare; }, 0);
+    if (!confirm(name + ' さんの追加交通費 ' + c.lines.length + '件（合計 ' + yen(total) + '）を申請しますか？')) return;
+
+    var btn = $('submitBtn');
+    btn.disabled = true;
+    btn.textContent = '送信中...';
+    gasCall('submitTravelClaim', [{ name: name, lines: c.lines }])
+      .then(function (res) {
+        btn.disabled = false;
+        updateTotal();
+        $('successSub').textContent = name + ' さん・' + res.count + '件の明細を受け付けました。';
+        $('successTotal').textContent = yen(res.total);
+        $('formPanel').classList.add('hide-form');
+        $('successPanel').classList.add('show');
+        window.scrollTo(0, 0);
+      })
+      .catch(function (err) {
+        btn.disabled = false;
+        updateTotal();
+        showError(err.message || String(err));
+      });
+  }
+
+  function resetForm() {
+    $('successPanel').classList.remove('show');
+    $('formPanel').classList.remove('hide-form');
+    $('lines').innerHTML = '';
+    addLine();
+    clearError();
+  }
+</script>
+
+</body>
+</html>
