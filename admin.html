@@ -308,6 +308,59 @@
   .counts { font-size: 12px; color: var(--ink-soft); margin-bottom: 10px; }
   .counts b { color: var(--deep); font-size: 14px; }
   .note-cell { max-width: 220px; word-break: break-all; }
+  .bar-check { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-soft); cursor: pointer; }
+
+  /* ---- 未処理の件数（全期間）：タップで該当セクションへ ---- */
+  .todo {
+    background: white;
+    border: 1px solid rgba(95, 184, 214, 0.18);
+    border-radius: 20px;
+    padding: 14px 16px 16px;
+    margin-top: 16px;
+    box-shadow: 0 14px 34px -26px rgba(15,59,87,0.4);
+  }
+  .todo-title { font-size: 12px; font-weight: 700; color: var(--ink-soft); margin-bottom: 10px; }
+  .todo-sum { margin-left: 8px; color: var(--warn); }
+  .todo-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  .todo-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 76px;
+    border-radius: 16px;
+    background: #F0F8FB;
+    border: 2px solid transparent;
+    text-decoration: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .todo-item:active { transform: scale(0.97); }
+  .todo-num {
+    font-size: 30px;
+    font-weight: 700;
+    line-height: 1.1;
+    color: var(--ink-soft);
+    opacity: 0.5;
+    font-variant-numeric: tabular-nums;
+  }
+  .todo-label { font-size: 12px; font-weight: 700; color: var(--ink-soft); margin-top: 2px; }
+  .todo-item.hot { background: #FBF3E2; border-color: var(--warn-soft); }
+  .todo-item.hot .todo-num { color: var(--warn); opacity: 1; }
+  .todo-item.hot .todo-label { color: var(--warn); }
+
+  /* ---- 折りたたみ式セクション ---- */
+  h2.sec-head { cursor: pointer; user-select: none; -webkit-tap-highlight-color: transparent; }
+  h2.sec-head:focus-visible { outline: 2px solid var(--primary); outline-offset: 4px; border-radius: 6px; }
+  .sec-count { margin-left: auto; }
+  .sec-chev {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+    transition: transform 0.2s ease;
+  }
+  section.collapsed .sec-chev { transform: rotate(-90deg); }
+  section.collapsed h2 { border-bottom: none; padding-bottom: 0; margin-bottom: 0; }
+  section.collapsed .sec-body { display: none; }
 
   @media (max-width: 620px) {
     body { padding: 20px 12px 60px; }
@@ -315,6 +368,122 @@
     .page-head { flex-direction: column; align-items: flex-start; }
     h1 { font-size: 20px; }
     section { padding: 15px 12px 12px; border-radius: 16px; }
+
+    /* 本文は16px以上 */
+    .sub, .msg, .counts, .empty, .bar-check { font-size: 16px; }
+    .counts b { font-size: 18px; }
+    h2 { font-size: 17px; min-height: 44px; }
+    h3 { font-size: 16px; flex-wrap: wrap; }
+    .tag { font-size: 14px; padding: 3px 10px; }
+    .stat-label { font-size: 13px; }
+    .stat-scope { font-size: 12px; }
+
+    /* 全期間バッジは上の「未処理」パネルと重複するので隠す */
+    .total-badge { display: none; }
+    .todo-grid { grid-template-columns: repeat(2, 1fr); }
+    .todo-num { font-size: 34px; }
+    .todo-label { font-size: 15px; }
+    .todo-title { font-size: 15px; }
+
+    /* 操作系は押しやすい大きさに */
+    .controls { gap: 10px; }
+    .controls button, #monthSelect { min-height: 44px; font-size: 15px; }
+    #monthSelect { flex: 1 1 100%; }
+    .bar { flex-wrap: wrap; }
+    .bar button { flex: 1 1 100%; min-height: 48px; font-size: 16px; }
+    .bar-check input, td.cell-select input { width: 24px; height: 24px; }
+    .del-form input { flex: 1 1 100%; min-height: 44px; font-size: 16px; }
+    .del-form button { flex: 1 1 100%; min-height: 48px; font-size: 16px; }
+    h3 button.small { min-height: 44px; font-size: 15px; }
+
+    /* ---- 表 → カード ---- */
+    .scroll-x { overflow-x: visible; }
+    table.cards { min-width: 0; display: block; }
+    table.cards thead { display: none; }
+    table.cards tbody { display: block; }
+    table.cards tr {
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      background: white;
+      border: 2px solid var(--mist);
+      border-radius: 16px;
+      padding: 10px 14px 14px;
+      margin-bottom: 12px;
+    }
+    table.cards tr.group-start td { border-top: none; }
+    table.cards tr.group-start { margin-top: 20px; }
+    table.cards td {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 8px 0;
+      border-bottom: 1px solid #EDF5F8;
+      font-size: 16px;
+      text-align: right;
+      word-break: break-word;
+      overflow-wrap: anywhere;
+    }
+    table.cards td::before {
+      content: attr(data-label);
+      flex-shrink: 0;
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--ink-soft);
+      text-align: left;
+    }
+    table.cards td.is-empty { display: none; }
+    table.cards td.cell-name {
+      order: -1;
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--deep);
+      justify-content: flex-start;
+      text-align: left;
+      border-bottom: 2px solid var(--mist);
+      padding-right: 40px;
+    }
+    table.cards td.cell-name::before { display: none; }
+    table.cards td.cell-select {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      padding: 0;
+      border: none;
+    }
+    table.cards td.cell-select::before { display: none; }
+    table.cards td.cell-actions {
+      order: 99;
+      display: block;
+      text-align: left;
+      border-bottom: none;
+      padding: 12px 0 0;
+    }
+    table.cards td.cell-actions::before { display: none; }
+    table.cards .note-cell { max-width: none; text-align: right; }
+    .daily-toggle { white-space: normal; }
+    .daily-toggle input { width: 24px; height: 24px; }
+
+    /* 承認・却下などのボタン：高さ44px以上・横に並べず間隔をあける */
+    table.cards td.cell-actions button {
+      display: block;
+      width: 100%;
+      min-height: 48px;
+      font-size: 16px;
+      border-radius: 12px;
+      white-space: normal;
+    }
+    table.cards td.cell-actions button + button { margin-top: 14px; }
+    table.cards td.cell-actions button.small:not(.ghost):not(.danger) {
+      background: linear-gradient(135deg, var(--primary), var(--deep));
+      box-shadow: 0 8px 18px -10px rgba(15,59,87,0.5);
+    }
+    table.cards td.cell-actions button.ghost {
+      background: white;
+      color: var(--ink-soft);
+      border: 2px solid #D5E4EA;
+    }
   }
 </style>
 </head>
@@ -342,6 +511,17 @@
         <div class="greet-eyebrow">TOKAI STUDENT BASKETBALL FEDERATION</div>
         <h1>打刻管理（財務部）</h1>
         <div class="sub">未退室者・要確認記録・修正申請・追加交通費申請・スキップ記録の確認と、誤打刻の削除ができます</div>
+      </div>
+    </div>
+
+    <!-- 未処理の件数（全期間）。タップで該当セクションを開いて移動する -->
+    <div class="todo" id="todoBox">
+      <div class="todo-title">未処理（全期間）<span class="todo-sum" id="todoSum"></span></div>
+      <div class="todo-grid">
+        <a class="todo-item" href="#sec-corr" data-sec="sec-corr"><span class="todo-num" id="todoCorr">–</span><span class="todo-label">修正申請</span></a>
+        <a class="todo-item" href="#sec-travel" data-sec="sec-travel"><span class="todo-num" id="todoTravel">–</span><span class="todo-label">追加交通費</span></a>
+        <a class="todo-item" href="#sec-open" data-sec="sec-open"><span class="todo-num" id="todoOpen">–</span><span class="todo-label">未退室</span></a>
+        <a class="todo-item" href="#sec-review" data-sec="sec-review"><span class="todo-num" id="todoReview">–</span><span class="todo-label">要確認</span></a>
       </div>
     </div>
     <div class="controls">
@@ -376,11 +556,11 @@
       </div>
     </div>
 
-    <section class="sec-open">
+    <section class="sec-open" id="sec-open">
       <h2><span class="sec-dot"></span>① 未退室者</h2>
       <div class="sub" style="margin:0 0 10px;">帰りが一斉のときは、早退などで打刻を忘れている人だけチェックを外してから「選択した人を一斉に強制退室」を押してください（初期状態は全員チェック済みです）。</div>
       <div class="bar" id="openBar" style="display:none">
-        <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-soft);cursor:pointer;">
+        <label class="bar-check">
           <input type="checkbox" id="openSelectAll"> 全選択/解除
         </label>
         <button class="small danger" id="bulkCheckoutBtn" onclick="bulkForceCheckout()">選択した人を一斉に強制退室</button>
@@ -388,13 +568,13 @@
       <div id="openArea" class="scroll-x"></div>
     </section>
 
-    <section class="sec-review">
+    <section class="sec-review" id="sec-review">
       <h2><span class="sec-dot"></span>② 補完された記録（要確認）</h2>
       <div class="sub" style="margin:0 0 10px;">退室忘れを自動・手動で補完した記録です。実際の活動時間が不明なため、区分は日当B（低い方）で仮記録されています。内容を確認し、必要なら「日当Aに変更」で区分を直したうえで「確認済みにする」を押してください（変更は打刻記録の区分にもすぐ反映されます）。</div>
       <div id="reviewArea" class="scroll-x"></div>
     </section>
 
-    <section class="sec-corr">
+    <section class="sec-corr" id="sec-corr">
       <h2><span class="sec-dot"></span>③ 修正申請</h2>
       <div class="sub" style="margin:0 0 10px;">委員が修正申請ページから送信した申請です。「承認」を押すと滞在記録・打刻記録が自動で修正され、区分（あいうえ）も再計算されます。未処理はすべての月から表示し、承認・却下済みと修正履歴は上で選択した月の分のみ表示します。</div>
       <div class="counts" id="corrCounts"></div>
@@ -403,12 +583,12 @@
       <div id="corrLogArea" class="scroll-x"></div>
     </section>
 
-    <section class="sec-travel">
+    <section class="sec-travel" id="sec-travel">
       <h2><span class="sec-dot"></span>④ 追加交通費申請</h2>
       <div class="sub" style="margin:0 0 10px;">委員が追加交通費ページから申請した明細です（旅費規程 第2条3項）。日当は行ごとに「あり／なし」を選んでから「承認」を押してください（初期値：会議＝あり、事務所＝なし／日当額は部署長1,500円・委員1,000円）。承認すると、明細の日付の月の月次シート末尾「追加交通費・追加日当・追加合計」がその月の承認済み全件から再集計されます。未処理はすべての月から表示し、処理済みと人別合計は上で選択した月（明細の日付）の分を表示します。</div>
       <div class="counts" id="travelCounts"></div>
       <div class="bar" id="travelBar" style="display:none">
-        <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-soft);cursor:pointer;">
+        <label class="bar-check">
           <input type="checkbox" id="travelSelectAll"> 全選択/解除
         </label>
         <button class="small" id="travelApproveSel" onclick="approveTravelSelected()">選択した明細を承認</button>
@@ -420,13 +600,13 @@
       <div id="travelSumArea" class="scroll-x"></div>
     </section>
 
-    <section class="sec-skip">
+    <section class="sec-skip" id="sec-skip">
       <h2><span class="sec-dot"></span>⑤ 日当対象外スキップ記録</h2>
       <div class="sub" style="margin:0 0 10px;">週内事務所制限・同日重複により打刻記録に追加しなかった退室打刻の一覧です（入退室時刻は滞在記録に保存されています）。上で選択した月の分を表示します。</div>
       <div id="skipArea" class="scroll-x"></div>
     </section>
 
-    <section class="sec-del">
+    <section class="sec-del" id="sec-del">
       <h2><span class="sec-dot"></span>⑥ 記録の削除（誤打刻の取り消し）</h2>
       <div class="sub" style="margin:0 0 10px;">テスト打刻や誤った名前での打刻を、検索して完全に削除できます。削除した内容は③の「修正履歴」に記録されます（いつ・何を削除したか）。打刻記録を削除すると、月次シート（交通費スプシ）の該当セルも自動で消去・更新されます。<br>※滞在記録の入室・退室はセットです。片方だけ削除すると未退室扱いになったり退室忘れ補完が誤作動したりするため、原則ペアで両方削除してください。</div>
       <div class="del-form">
@@ -501,6 +681,7 @@
       return;
     }
     var table = document.createElement('table');
+    table.className = 'cards'; // スマホ幅ではCSSでカード表示に切り替わる
     var thead = document.createElement('thead');
     var trh = document.createElement('tr');
     headers.forEach(function (h) {
@@ -513,10 +694,18 @@
     var tbody = document.createElement('tbody');
     rows.forEach(function (cells) {
       var tr = document.createElement('tr');
-      cells.forEach(function (c) {
+      cells.forEach(function (c, i) {
         var td = document.createElement('td');
+        // カード表示用：見出しをラベルとして持たせ、名前・選択・操作の列には役割のクラスを付ける
+        var h = headers[i] || '';
+        td.setAttribute('data-label', h);
+        if (h.indexOf('操作') !== -1) td.className = 'cell-actions';
+        else if (h === '選択') td.className = 'cell-select';
+        else if (h === '名前') td.className = 'cell-name';
         if (c instanceof Node) td.appendChild(c);
         else td.textContent = c == null ? '' : String(c);
+        // 中身が空のセル（任意項目の空欄など）はカード表示で行ごと隠す
+        if (td.textContent.trim() === '' && !td.querySelector('input, button, select')) td.classList.add('is-empty');
         tr.appendChild(td);
       });
       tbody.appendChild(tr);
@@ -654,6 +843,28 @@
       '・追加交通費 ' + totalTravel;
     $('totalBadge').className =
       'total-badge' + ((totalOpen + totalReview + totalPending + totalTravel) > 0 ? ' hot' : '');
+
+    // 一番上の「未処理」パネルと、各セクション見出しの件数
+    var pending = {
+      'sec-open': totalOpen,
+      'sec-review': totalReview,
+      'sec-corr': totalPending,
+      'sec-travel': totalTravel,
+    };
+    [['todoOpen', 'sec-open'], ['todoReview', 'sec-review'], ['todoCorr', 'sec-corr'], ['todoTravel', 'sec-travel']]
+      .forEach(function (p) {
+        var n = pending[p[1]];
+        $(p[0]).textContent = n;
+        $(p[0]).parentNode.classList.toggle('hot', n > 0);
+      });
+    var sum = totalOpen + totalReview + totalPending + totalTravel;
+    $('todoSum').textContent = sum > 0 ? '計 ' + sum + ' 件' : 'なし';
+    Object.keys(pending).forEach(function (id) {
+      var badge = document.querySelector('#' + id + ' .sec-count');
+      badge.textContent = pending[id] > 0 ? '未処理 ' + pending[id] : '';
+      badge.className = 'sec-count' + (pending[id] > 0 ? ' tag warn' : '');
+    });
+    initSectionsOnce(pending);
 
     // ① 未退室者
     var openRows = data.openSessions;
@@ -1116,6 +1327,58 @@
       })
       .catch(function (err) { done(); fail(err); });
   }
+
+  // ---- 折りたたみ式セクション ----
+  // 見出し以外の中身を .sec-body に包み、見出しのタップで開閉する
+  var CHEVRON = '<svg class="sec-chev" viewBox="0 0 24 24" fill="none" stroke="#5A7686" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>';
+  document.querySelectorAll('#content section').forEach(function (sec) {
+    var h2 = sec.querySelector('h2');
+    var body = document.createElement('div');
+    body.className = 'sec-body';
+    while (h2.nextSibling) body.appendChild(h2.nextSibling);
+    sec.appendChild(body);
+
+    var count = document.createElement('span');
+    count.className = 'sec-count';
+    h2.appendChild(count);
+    h2.insertAdjacentHTML('beforeend', CHEVRON);
+    h2.classList.add('sec-head');
+    h2.setAttribute('role', 'button');
+    h2.setAttribute('tabindex', '0');
+    h2.setAttribute('aria-expanded', 'true');
+    h2.addEventListener('click', function () { setSectionOpen(sec, sec.classList.contains('collapsed')); });
+    h2.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); h2.click(); }
+    });
+  });
+
+  function setSectionOpen(sec, open) {
+    sec.classList.toggle('collapsed', !open);
+    sec.querySelector('h2').setAttribute('aria-expanded', open ? 'true' : 'false');
+  }
+
+  // 初回表示時だけ開閉の初期状態を決める（以降の「更新」では利用者の開閉を保つ）。
+  // スマホ幅：未処理があるセクションだけ開く（スキップ記録・削除は閉じる）。
+  // パソコン幅：今まで通りすべて開いた状態で始める。
+  var sectionsInited = false;
+  function initSectionsOnce(pending) {
+    if (sectionsInited) return;
+    sectionsInited = true;
+    var narrow = window.matchMedia('(max-width: 620px)').matches;
+    document.querySelectorAll('#content section').forEach(function (sec) {
+      setSectionOpen(sec, !narrow || pending[sec.id] > 0);
+    });
+  }
+
+  // 「未処理」パネルのタップ：そのセクションを開いて移動する
+  document.querySelectorAll('.todo-item').forEach(function (a) {
+    a.addEventListener('click', function (e) {
+      e.preventDefault();
+      var sec = $(a.dataset.sec);
+      setSectionOpen(sec, true);
+      sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  });
 
   if (KEY) loadAll();
 </script>
