@@ -411,8 +411,8 @@
       '<input type="date" class="field-input f-date">' +
       '<div class="section-label">活動</div>' +
       '<div class="act-grid"></div>' +
-      '<div class="section-label f-memo-label">会議内容</div>' +
-      '<input type="text" class="field-input f-memo" maxlength="200">' +
+      '<div class="section-label f-memo-label">活動内容</div>' +
+      '<input type="text" class="field-input f-memo" maxlength="200" placeholder="例：理事会、事務所業務">' +
       '<div class="section-label">交通費（往復）</div>' +
       '<div class="yen-wrap"><input type="text" class="field-input f-fare" inputmode="numeric" pattern="[0-9]*" placeholder="例：1240" autocomplete="off"><span class="unit">円</span></div>';
 
@@ -467,11 +467,9 @@
     var memo = box.querySelector('.f-memo');
     var label = box.querySelector('.f-memo-label');
     if (act === '会議') {
-      label.textContent = '会議内容（必須）';
-      memo.placeholder = '例：11月定例理事会';
+      label.textContent = '活動内容（必須）';
     } else {
-      label.textContent = '会議内容・メモ（任意）';
-      memo.placeholder = '事務所の場合は空欄でOK';
+      label.textContent = '活動内容（任意）';
     }
     box.classList.remove('invalid');
     box.querySelector('.act-grid').classList.remove('invalid');
@@ -505,7 +503,7 @@
   /**
    * 明細の検証。GAS側 submitTravelClaim と同じ判定・同じ文言にしている（変えるときは両方直す）。
    * - 全項目が空の行は無視（件数にも数えない）
-   * - 一部だけ入力の行は必須項目（日付・活動・交通費、会議なら会議内容）の未入力を1項目ずつ出す
+   * - 一部だけ入力の行は必須項目（日付・活動・交通費、会議なら活動内容）の未入力を1項目ずつ出す
    * - 未来日付・金額範囲・送信内容の中での重複（名前・日付・活動・金額が同じ）
    * 既に申請済みとの重複はGAS側でだけ判定する。
    * 戻り値：{ errors: [文言], bad: {行index: {date/act/memo/fare: true}}, clean: [有効な明細] }
@@ -523,13 +521,13 @@
       if (!ln.date) { ng('date', '日付が未入力です'); missing = true; }
       if (!ln.activity) { ng('act', '活動が未入力です'); missing = true; }
       if (!ln.fare) { ng('fare', '交通費が未入力です'); missing = true; }
-      if (ln.activity === '会議' && !ln.memo) { ng('memo', '会議内容が未入力です'); missing = true; }
+      if (ln.activity === '会議' && !ln.memo) { ng('memo', '活動内容が未入力です'); missing = true; }
       if (missing) return;
 
       if (!/^\d{4}-\d{2}-\d{2}$/.test(ln.date)) { ng('date', '日付が正しくありません'); return; }
       if (ln.date > today) { ng('date', '未来の日付は申請できません'); return; }
       if (ACTIVITIES.indexOf(ln.activity) === -1) { ng('act', '活動は「事務所」か「会議」を選んでください'); return; }
-      if (ln.memo.length > 200) { ng('memo', '会議内容は200文字以内にしてください'); return; }
+      if (ln.memo.length > 200) { ng('memo', '活動内容は200文字以内にしてください'); return; }
       var fare = Number(ln.fare);
       if (!/^\d+$/.test(ln.fare) || fare < 1 || fare > FARE_MAX) {
         ng('fare', '交通費は1〜' + FARE_MAX.toLocaleString('ja-JP') + '円の整数で入力してください');

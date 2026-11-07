@@ -903,7 +903,7 @@
     var groupStarts = [];
     var prevId = null;
     renderTable('travelArea',
-      ['選択', '申請日時', '名前', '日付', '活動', '会議内容', '交通費', '日当', '状態／操作'],
+      ['選択', '申請日時', '名前', '日付', '活動', '活動内容', '交通費', '日当', '状態／操作'],
       t.rows.map(function (r, i) {
         var pending = r.status === '未処理';
         if (r.id !== prevId) groupStarts.push(i);
