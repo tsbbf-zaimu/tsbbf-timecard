@@ -163,6 +163,7 @@
   }
   .line-del:active { color: var(--bad); }
   .line .field-input { margin-bottom: 12px; }
+  .act-grid.invalid .act-btn { border-color: var(--bad); }
   .line .section-label { margin-bottom: 6px; }
 
   .act-grid {
@@ -326,7 +327,7 @@
   <div class="panel" id="formPanel">
     <div class="greet-eyebrow">TOKAI STUDENT BASKETBALL FEDERATION</div>
     <div class="page-title">追加交通費の申請</div>
-    <div class="page-sub">事務所・会議で来たときの交通費（往復）を、月末にその月の分をまとめて申請してね。財務部が確認して承認します。</div>
+    <div class="page-sub">追加交通費を申請してね。財務部が確認して承認します。</div>
 
     <div class="section-label">あなたの名前</div>
     <select class="field-input" id="nameSelect" disabled>
@@ -399,9 +400,7 @@
   function lineEls() { return Array.prototype.slice.call(document.querySelectorAll('#lines .line')); }
 
   function addLine(focus) {
-    var lines = lineEls();
-    if (lines.length >= MAX_LINES) return;
-    var prev = lines[lines.length - 1];
+    if (lineEls().length >= MAX_LINES) return;
 
     var box = document.createElement('div');
     box.className = 'line';
@@ -443,11 +442,14 @@
       renumber();
       updateTotal();
     });
-    box.addEventListener('input', function () { box.classList.remove('invalid'); });
+    box.addEventListener('input', function (e) {
+      box.classList.remove('invalid');
+      if (e.target.classList) e.target.classList.remove('invalid');
+      updateTotal();
+    });
 
-    // 同じ経路で何度も来ることが多いので、前の行の活動と金額を引き継ぐ（日付は空欄）
-    setAct(box, prev ? prev.dataset.act || '' : '');
-    if (prev) fare.value = prev.querySelector('.f-fare').value;
+    // 追加した行はすべて空の状態で始める（活動も未選択）
+    setAct(box, '');
 
     $('lines').appendChild(box);
     renumber();
@@ -472,6 +474,9 @@
       memo.placeholder = '事務所の場合は空欄でOK';
     }
     box.classList.remove('invalid');
+    box.querySelector('.act-grid').classList.remove('invalid');
+    memo.classList.remove('invalid');
+    updateTotal();
   }
 
   function renumber() {
@@ -483,46 +488,101 @@
     $('addBtn').disabled = lines.length >= MAX_LINES;
   }
 
-  function updateTotal() {
-    var lines = lineEls();
-    var total = 0;
-    lines.forEach(function (box) {
-      var v = Number(box.querySelector('.f-fare').value);
-      if (v > 0) total += v;
+  // 画面の全行の入力値（空行も含む。行番号を「明細 n」と揃えるためそのままGASへ送る）
+  function readLines() {
+    return lineEls().map(function (box) {
+      return {
+        date: box.querySelector('.f-date').value,
+        activity: box.dataset.act || '',
+        memo: box.querySelector('.f-memo').value.trim(),
+        fare: normFare(box.querySelector('.f-fare').value),
+      };
     });
-    $('totalLabel').textContent = '合計（' + lines.length + '件）';
-    $('totalValue').textContent = yen(total);
-    $('submitBtn').textContent = 'まとめて申請する（' + lines.length + '件）';
   }
 
-  function collect() {
+  function isBlankLine(ln) { return !ln.date && !ln.activity && !ln.memo && !ln.fare; }
+
+  /**
+   * 明細の検証。GAS側 submitTravelClaim と同じ判定・同じ文言にしている（変えるときは両方直す）。
+   * - 全項目が空の行は無視（件数にも数えない）
+   * - 一部だけ入力の行は必須項目（日付・活動・交通費、会議なら会議内容）の未入力を1項目ずつ出す
+   * - 未来日付・金額範囲・送信内容の中での重複（名前・日付・活動・金額が同じ）
+   * 既に申請済みとの重複はGAS側でだけ判定する。
+   * 戻り値：{ errors: [文言], bad: {行index: {date/act/memo/fare: true}}, clean: [有効な明細] }
+   */
+  function validateLines(raw, today) {
     var errors = [];
-    var today = todayStr();
-    var seen = {};
-    var out = [];
-    lineEls().forEach(function (box, i) {
+    var bad = {};
+    var clean = [];
+    raw.forEach(function (ln, i) {
       var no = (i + 1) + '行目：';
-      var date = box.querySelector('.f-date').value;
-      var act = box.dataset.act || '';
-      var memo = box.querySelector('.f-memo').value.trim();
-      var fareStr = normFare(box.querySelector('.f-fare').value);
-      var fare = Number(fareStr);
-      var err = '';
-      if (!date) err = '日付を選択してください。';
-      else if (date > today) err = '未来の日付は申請できません。';
-      else if (!act) err = '活動（事務所／会議）を選んでください。';
-      else if (act === '会議' && !memo) err = '会議の内容を入力してください。';
-      else if (!fareStr || fare < 1 || fare > FARE_MAX) err = '交通費は1〜99,999円の整数で入力してください。';
-      else {
-        var key = date + '|' + act + '|' + fare;
-        if (seen[key]) err = '同じ日付・活動・金額の行が' + seen[key] + '行目にあります。';
-        else seen[key] = i + 1;
+      function ng(field, msg) { errors.push(no + msg); (bad[i] = bad[i] || {})[field] = true; }
+      if (isBlankLine(ln)) return;
+
+      var missing = false;
+      if (!ln.date) { ng('date', '日付が未入力です'); missing = true; }
+      if (!ln.activity) { ng('act', '活動が未入力です'); missing = true; }
+      if (!ln.fare) { ng('fare', '交通費が未入力です'); missing = true; }
+      if (ln.activity === '会議' && !ln.memo) { ng('memo', '会議内容が未入力です'); missing = true; }
+      if (missing) return;
+
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(ln.date)) { ng('date', '日付が正しくありません'); return; }
+      if (ln.date > today) { ng('date', '未来の日付は申請できません'); return; }
+      if (ACTIVITIES.indexOf(ln.activity) === -1) { ng('act', '活動は「事務所」か「会議」を選んでください'); return; }
+      if (ln.memo.length > 200) { ng('memo', '会議内容は200文字以内にしてください'); return; }
+      var fare = Number(ln.fare);
+      if (!/^\d+$/.test(ln.fare) || fare < 1 || fare > FARE_MAX) {
+        ng('fare', '交通費は1〜' + FARE_MAX.toLocaleString('ja-JP') + '円の整数で入力してください');
+        return;
       }
-      box.classList.toggle('invalid', !!err);
-      if (err) errors.push(no + err);
-      out.push({ date: date, activity: act, memo: memo, fare: fare });
+      clean.push({ i: i, date: ln.date, activity: ln.activity, fare: fare });
     });
-    return { errors: errors, lines: out };
+
+    if (!errors.length) {
+      var seen = {};
+      var dups = [];
+      clean.forEach(function (c) {
+        var key = c.date + '|' + c.activity + '|' + c.fare;
+        if (seen[key]) {
+          dups.push((c.i + 1) + '行目：' + c.date.replace(/-/g, '/') + '・' + c.activity + '・' +
+            c.fare.toLocaleString('ja-JP') + '円 が' + seen[key] + '行目と重複しています');
+          bad[c.i] = { date: true, act: true, fare: true };
+        } else {
+          seen[key] = c.i + 1;
+        }
+      });
+      if (dups.length) errors = ['同じ内容の申請があります（名前・日付・活動・金額が同じ）'].concat(dups);
+    }
+    if (!errors.length && !clean.length) errors.push('明細を1件以上入力してください');
+    return { errors: errors, bad: bad, clean: clean };
+  }
+
+  // 該当行・該当項目を赤枠でハイライトし、最初の行までスクロールする
+  function paintErrors(bad) {
+    var first = null;
+    lineEls().forEach(function (box, i) {
+      var b = bad[i] || {};
+      var any = !!bad[i];
+      box.classList.toggle('invalid', any);
+      box.querySelector('.f-date').classList.toggle('invalid', !!b.date);
+      box.querySelector('.act-grid').classList.toggle('invalid', !!b.act);
+      box.querySelector('.f-memo').classList.toggle('invalid', !!b.memo);
+      box.querySelector('.f-fare').classList.toggle('invalid', !!b.fare);
+      if (any && !first) first = box;
+    });
+    if (first) first.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
+  function updateTotal() {
+    var filled = readLines().filter(function (ln) { return !isBlankLine(ln); });
+    var total = 0;
+    filled.forEach(function (ln) {
+      var v = Number(ln.fare);
+      if (v > 0) total += v;
+    });
+    $('totalLabel').textContent = '合計（' + filled.length + '件）';
+    $('totalValue').textContent = yen(total);
+    $('submitBtn').textContent = 'まとめて申請する（' + filled.length + '件）';
   }
 
   function initialize() {
@@ -564,16 +624,19 @@
     clearError();
     var name = $('nameSelect').value;
     if (!name) { showError('名前を選択してください。'); return; }
-    var c = collect();
-    if (c.errors.length) { showError(c.errors.join('\n')); return; }
+    var raw = readLines();
+    var v = validateLines(raw, todayStr());
+    paintErrors(v.bad);
+    if (v.errors.length) { showError(v.errors.join('\n')); return; }
 
-    var total = c.lines.reduce(function (s, l) { return s + l.fare; }, 0);
-    if (!confirm(name + ' さんの追加交通費 ' + c.lines.length + '件（合計 ' + yen(total) + '）を申請しますか？')) return;
+    var total = v.clean.reduce(function (s, l) { return s + l.fare; }, 0);
+    if (!confirm(name + ' さんの追加交通費 ' + v.clean.length + '件（合計 ' + yen(total) + '）を申請しますか？')) return;
 
     var btn = $('submitBtn');
     btn.disabled = true;
     btn.textContent = '送信中...';
-    gasCall('submitTravelClaim', [{ name: name, lines: c.lines }])
+    // 空行も含めて送る（GAS側も空行を無視し、行番号が画面と一致する）
+    gasCall('submitTravelClaim', [{ name: name, lines: raw }])
       .then(function (res) {
         btn.disabled = false;
         updateTotal();
@@ -586,7 +649,15 @@
       .catch(function (err) {
         btn.disabled = false;
         updateTotal();
-        showError(err.message || String(err));
+        var msg = err.message || String(err);
+        // 「◯行目：」で始まるGAS側のエラー（既に申請済みとの重複など）は該当行をハイライト
+        var bad = {};
+        msg.split('\n').forEach(function (line) {
+          var m = line.match(/^(\d+)行目：/);
+          if (m) bad[Number(m[1]) - 1] = {};
+        });
+        paintErrors(bad);
+        showError(msg);
       });
   }
 
